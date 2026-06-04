@@ -1,0 +1,46 @@
+# Environment and local secrets
+.env
+**/.env
+.env.*
+*.env
+
+# Dependencies and build outputs
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+frontend/playwright-report/
+frontend/test-results/
+frontend/test-artifacts/
+frontend/*-check*.png
+frontend/orders-query-*.png
+frontend/build_err.txt
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+backend/.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Runtime data
+logs/
+*.log
+backend/logs/
+frontend/logs/
+backend/static/uploads/*
+!backend/static/uploads/.gitkeep
+frontend/public/images/customer-qr.png
+
+# Local assistant/tooling state
+.claude/
+.sixth/
+
+# Local project planning documents
+文档/
+
+# OS files
+.DS_Store
+Thumbs.db
