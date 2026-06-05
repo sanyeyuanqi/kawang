@@ -133,7 +133,7 @@ export default function AdminProductsPage() {
         )}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] text-14">
+          <table className="w-full min-w-[1200px] text-14">
             <thead className="text-[#8e99aa]">
               <tr className="border-b border-[#edf1f6]">
                 <th className="w-[64px] px-6 py-5 text-left font-medium">ID</th>
@@ -143,14 +143,15 @@ export default function AdminProductsPage() {
                 <th className="w-[140px] px-4 py-5 text-left font-medium">分类</th>
                 <th className="w-[105px] px-4 py-5 text-left font-medium">价格</th>
                 <th className="w-[76px] px-4 py-5 text-left font-medium">库存</th>
+                <th className="w-[76px] px-4 py-5 text-left font-medium">已售</th>
                 <th className="w-[86px] px-4 py-5 text-left font-medium">状态</th>
-                <th className="sticky right-0 z-10 w-[150px] bg-white px-6 py-5 text-center font-medium shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.45)]">操作</th>
+                <th className="sticky right-0 z-10 w-[180px] bg-white px-6 py-5 text-center font-medium shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.45)]">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#edf1f6] text-[#293344]">
               {loading && Array.from({ length: 5 }).map((_, index) => (
                 <tr key={`loading-${index}`}>
-                  <td colSpan={9} className="px-8 py-5">
+                  <td colSpan={10} className="px-8 py-5">
                     <div className="h-10 animate-pulse rounded-[12px] bg-[#f1f5fb]" />
                   </td>
                 </tr>
@@ -174,7 +175,7 @@ export default function AdminProductsPage() {
                   </td>
                   <td className="px-4 py-5">
                     <div className="flex items-center gap-3">
-                      <div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-[14px] bg-[#eef3ff] text-15 font-bold text-primary-500">
+                      <div className="grid h-[54px] w-24 shrink-0 place-items-center overflow-hidden rounded-[12px] bg-[#eef3ff] text-15 font-bold text-primary-500">
                         {item.cover_image ? <img src={resolveAssetUrl(item.cover_image)} alt="" className="h-full w-full object-cover" /> : item.name.slice(0, 1)}
                       </div>
                       <div className="min-w-0">
@@ -189,17 +190,18 @@ export default function AdminProductsPage() {
                   <td className="px-4 py-5 text-[#5d6675]">{item.category_name || "未分类"}</td>
                   <td className="px-4 py-5 font-semibold text-danger-500">{formatPrice(item.price)}</td>
                   <td className="px-4 py-5 text-[#5d6675]">{item.stock ?? item.available_stock}</td>
+                  <td className="px-4 py-5 text-[#5d6675]">{item.sold_count ?? 0}</td>
                   <td className="px-4 py-5">
                     <span className={"inline-flex h-8 items-center rounded-full px-3 text-13 font-medium " + (item.status === "on_sale" ? "bg-success-50 text-success-600" : "bg-gray-100 text-gray-500")}>
                       {item.status === "on_sale" ? "在售" : "售罄"}
                     </span>
                   </td>
                   <td className="sticky right-0 z-10 bg-white px-6 py-5 text-center shadow-[-10px_0_18px_-18px_rgba(15,23,42,0.45)] group-hover:bg-[#f8fbff]">
-                    <div className="flex justify-center gap-2">
-                      <button onClick={() => { setEditing(item); setFormOpen(true) }} className="h-8 rounded-[10px] border border-[#dfe6ef] bg-white px-4 text-13 font-semibold text-primary-600 transition-colors hover:bg-[#eef3ff]">
+                    <div className="admin-action-group">
+                      <button onClick={() => { setEditing(item); setFormOpen(true) }} className="admin-action-button">
                         编辑
                       </button>
-                      <button onClick={() => setDeleteTarget(item)} className="h-8 rounded-[10px] bg-danger-50 px-4 text-13 font-semibold text-danger-500 transition-colors hover:bg-red-100">
+                      <button onClick={() => setDeleteTarget(item)} className="admin-action-button admin-action-button-danger">
                         删除
                       </button>
                     </div>
@@ -209,7 +211,7 @@ export default function AdminProductsPage() {
 
               {!loading && items.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-8 py-16 text-center text-[#8e99aa]">暂无商品数据</td>
+                  <td colSpan={10} className="px-8 py-16 text-center text-[#8e99aa]">暂无商品数据</td>
                 </tr>
               )}
             </tbody>

@@ -27,7 +27,7 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f4f7fb] text-[#111827] md:flex">
+    <div className="admin-shell min-h-screen bg-[#f4f7fb] text-[#111827] md:flex">
       <aside className={"fixed inset-y-0 left-0 z-30 w-[300px] bg-[#101827] text-white shadow-xl transform transition-transform " + (sidebarOpen ? "translate-x-0" : "-translate-x-full") + " md:sticky md:top-0 md:h-screen md:translate-x-0 md:shrink-0"}>
         <div className="px-8 pb-8 pt-10">
           <Link to="/admin" className="block">

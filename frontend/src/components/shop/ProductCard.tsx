@@ -16,10 +16,12 @@ export default function ProductCard({ product, theme }: ProductCardProps) {
   const coverImage = resolveAssetUrl(product.cover_image)
   const showImage = Boolean(coverImage && !imageFailed)
   const stockLabel = `${t("common.stock")} ${product.available_stock}`
+  const soldLabel = `${st("已售")} ${product.sold_count ?? 0}`
   const deliveryLabel = product.available_stock > 0 ? t("common.autoDelivery") : t("common.outOfStock")
   const badges = [
     { label: deliveryLabel, className: product.available_stock > 0 ? "bg-[#e8faf4] text-[#08a678]" : "bg-[#f5f7fb] text-[#8b98ad]" },
     { label: stockLabel, className: "bg-[#fff6df] text-[#f09e1f]" },
+    { label: soldLabel, className: "bg-[#fff1f1] text-[#ec3c30]" },
     { label: t("common.supportOnline"), className: "bg-[#e8f2ff] text-[#0e4beb]" },
   ]
 

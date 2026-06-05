@@ -1,13 +1,15 @@
 import { Link } from "react-router-dom"
-import { MobileHomeIndicator, MobileStatusBar } from "@/components/shop/MobilePhoneFrame"
+import { MobileHomeIndicator } from "@/components/shop/MobilePhoneFrame"
 import { shopInfoConfig } from "@/config/shopInfoConfig"
 import { useLanguage } from "@/context/LanguageContext"
 import { useShopContactConfig } from "@/hooks/useShopContactConfig"
 
-function MiniQr({ className = "absolute left-[252px] top-[526px]", imageSrc = "" }: { className?: string; imageSrc?: string }) {
+function MiniQr({ className = "absolute left-[252px] top-[526px]", imageSrc = "", size = 86 }: { className?: string; imageSrc?: string; size?: number }) {
+  const scale = size / 86
+  const qrStyle = { width: size, height: size, borderRadius: Math.round(10 * scale) }
   if (imageSrc) {
     return (
-      <div className={`${className} mini-qr h-[86px] w-[86px] overflow-hidden rounded-[10px] border border-[#c7d6eb] bg-[#f6f8fb]`}>
+      <div className={`${className} mini-qr overflow-hidden border border-[#c7d6eb] bg-[#f6f8fb]`} style={qrStyle}>
         <img src={imageSrc} alt="" className="h-full w-full object-cover" />
       </div>
     )
@@ -20,10 +22,17 @@ function MiniQr({ className = "absolute left-[252px] top-[526px]", imageSrc = ""
     [42, 50, 4, 12], [54, 54, 10, 4], [24, 62, 8, 4], [62, 22, 4, 8],
   ]
   return (
-    <div className={`${className} mini-qr h-[86px] w-[86px] rounded-[10px] border border-[#c7d6eb] bg-[#f6f8fb]`}>
-      <div className="mini-qr-inner absolute left-[8px] top-[8px] h-[70px] w-[70px] rounded-[4px] bg-white">
+    <div className={`${className} mini-qr border border-[#c7d6eb] bg-[#f6f8fb]`} style={qrStyle}>
+      <div
+        className="mini-qr-inner absolute bg-white"
+        style={{ left: 8 * scale, top: 8 * scale, width: 70 * scale, height: 70 * scale, borderRadius: 4 * scale }}
+      >
         {modules.map(([x, y, w, h], index) => (
-          <span key={index} className="mini-qr-module absolute rounded-[1px] bg-[#111827]" style={{ left: x, top: y, width: w, height: h }} />
+          <span
+            key={index}
+            className="mini-qr-module absolute bg-[#111827]"
+            style={{ left: x * scale, top: y * scale, width: w * scale, height: h * scale, borderRadius: scale }}
+          />
         ))}
       </div>
     </div>
@@ -39,11 +48,10 @@ export default function AboutPage() {
   return (
     <>
       <div className="mx-auto min-h-[100svh] w-full max-w-[430px] bg-[#f6f8fb] pb-32 md:hidden">
-        <MobileStatusBar />
         <main className="px-7 pt-5">
           <section className="rounded-[20px] border border-[#dbe5f5] bg-white px-6 py-8">
             <div className="flex items-center gap-5">
-              <div className="grid size-[76px] place-items-center rounded-[18px] bg-[#2663eb] text-[30px] font-semibold text-white">{st(brand.iconText)}</div>
+              <MiniQr className="relative shrink-0" imageSrc={contactConfig.qrImageSrc} />
               <div>
                 <h2 className="text-[24px] font-bold leading-none text-[#111827]">{st(brand.name)}</h2>
                 <p className="mt-3 text-[16px] leading-none text-[#737d8f]">{st(brand.subtitle)}</p>
@@ -61,12 +69,14 @@ export default function AboutPage() {
             </div>
           </section>
 
-          <section className="relative mt-8 rounded-[20px] border border-[#dbe5f5] bg-white px-6 py-8">
+          <section className="mt-8 rounded-[20px] border border-[#dbe5f5] bg-white px-6 py-8">
             <h2 className="text-[22px] font-bold leading-none text-[#111827]">{st(storeInfo.contact.title)}</h2>
-            <p className="mt-8 text-[17px] leading-none text-[#404a5c]">{contactText}</p>
-            <p className="mt-6 w-[210px] text-[15px] leading-[22px] text-[#737d8f]">{st(storeInfo.contact.helpText)}</p>
-            <MiniQr className="absolute right-7 top-[62px]" imageSrc={contactConfig.qrImageSrc} />
-            <p className="absolute right-7 top-[158px] h-[18px] w-[86px] text-center text-[12px] leading-[18px] text-[#737d8f]">{st(storeInfo.contact.qrCaption)}</p>
+            <div className="mt-8">
+              <div className="min-w-0">
+                <p className="break-all text-[17px] leading-6 text-[#404a5c]">{contactText}</p>
+                <p className="mt-6 text-[15px] leading-[22px] text-[#737d8f]">{st(storeInfo.contact.helpText)}</p>
+              </div>
+            </div>
           </section>
         </main>
 
@@ -96,24 +106,18 @@ export default function AboutPage() {
       <div className="hidden pb-[clamp(72px,5vw,120px)] pt-[clamp(50px,2.96vw,64px)] md:block">
         <div className="figma-web-container">
           <section className="relative h-[clamp(190px,11.35vw,232px)] overflow-hidden rounded-[clamp(17px,1.04vw,22px)] bg-[#e1f0ff]">
-            <div className="absolute left-[clamp(38px,2.26vw,48px)] top-[clamp(54px,3.08vw,64px)]">
-              <h1 className="text-[clamp(29px,1.72vw,36px)] font-bold leading-[1.18] text-[#111827]">{st(aboutHero.title)}</h1>
-              <p className="mt-[clamp(8px,0.52vw,11px)] w-[clamp(430px,31.77vw,651px)] text-[clamp(14px,0.83vw,17px)] leading-[1.45] text-[#404a5c]">
+            <div className="absolute left-[clamp(38px,2.26vw,48px)] top-[clamp(42px,2.45vw,52px)]">
+              <h1 className="text-[clamp(29px,1.72vw,36px)] font-bold leading-[1.12] text-[#111827]">{st(aboutHero.title)}</h1>
+              <p className="mt-[clamp(10px,0.62vw,13px)] w-[clamp(430px,31.77vw,651px)] text-[clamp(14px,0.83vw,17px)] leading-[1.5] text-[#404a5c]">
                 {st(aboutHero.description)}
               </p>
-              <span className="mt-[clamp(16px,1.05vw,22px)] inline-flex h-[clamp(24px,1.35vw,28px)] items-center rounded-full bg-white px-[clamp(14px,0.85vw,18px)] text-[clamp(11px,0.62vw,13px)] font-medium text-[#0e4beb]">
+              <span className="mt-[clamp(20px,1.2vw,26px)] inline-flex h-[clamp(24px,1.35vw,28px)] items-center rounded-full bg-white px-[clamp(14px,0.85vw,18px)] text-[clamp(11px,0.62vw,13px)] font-medium text-[#0e4beb]">
                 {st(aboutHero.badge)}
               </span>
             </div>
 
-            <div className="absolute right-[clamp(64px,4.01vw,82px)] top-[clamp(48px,2.97vw,61px)] flex items-center gap-[clamp(20px,1.2vw,25px)]">
-              <div className="grid h-[clamp(72px,4.27vw,88px)] w-[clamp(72px,4.27vw,88px)] place-items-center rounded-[clamp(18px,1.09vw,23px)] bg-[#1551ed] text-[clamp(31px,1.82vw,38px)] font-bold leading-none text-white">
-                {st(brand.iconText)}
-              </div>
-              <div>
-                <h2 className="text-[clamp(20px,1.2vw,25px)] font-bold leading-none text-[#111827]">{st(brand.name)}</h2>
-                <p className="mt-[clamp(17px,0.99vw,21px)] text-[clamp(12px,0.68vw,14px)] leading-none text-[#404a5c]">{st(aboutHero.slogan)}</p>
-              </div>
+            <div className="absolute right-[clamp(74px,4.8vw,108px)] top-1/2 -translate-y-1/2">
+              <MiniQr className="relative shrink-0" imageSrc={contactConfig.qrImageSrc} size={118} />
             </div>
           </section>
 
@@ -132,11 +136,9 @@ export default function AboutPage() {
               <article className="relative h-[clamp(224px,12.92vw,265px)] rounded-[clamp(11px,0.68vw,14px)] border border-[#dfe5ed] bg-white px-[clamp(31px,1.77vw,37px)] py-[clamp(34px,2.03vw,42px)]">
                 <h3 className="text-[clamp(17px,0.99vw,21px)] font-bold leading-none text-[#111827]">{st(storeInfo.contact.title)}</h3>
                 <p className="mt-[clamp(32px,1.88vw,39px)] text-[clamp(13px,0.73vw,15px)] leading-none text-[#404a5c]">{contactText}</p>
-                <p className="mt-[clamp(28px,1.56vw,32px)] w-[clamp(207px,12.29vw,252px)] text-[clamp(12px,0.68vw,14px)] leading-[1.45] text-[#737d8f]">
+                <p className="mt-[clamp(28px,1.56vw,32px)] max-w-[clamp(280px,18vw,360px)] text-[clamp(12px,0.68vw,14px)] leading-[1.45] text-[#737d8f]">
                   {st(storeInfo.contact.helpText)}
                 </p>
-                <MiniQr className="absolute right-[clamp(42px,2.4vw,50px)] top-[clamp(42px,2.34vw,48px)]" imageSrc={contactConfig.qrImageSrc} />
-                <p className="absolute right-[clamp(42px,2.4vw,50px)] top-[clamp(136px,7.32vw,150px)] h-[18px] w-[86px] text-center text-[clamp(10px,0.63vw,13px)] leading-[18px] text-[#737d8f]">{st(storeInfo.contact.qrCaption)}</p>
               </article>
 
               <article className="h-[clamp(224px,12.92vw,265px)] rounded-[clamp(11px,0.68vw,14px)] border border-[#dfe5ed] bg-white px-[clamp(31px,1.77vw,37px)] py-[clamp(34px,2.03vw,42px)]">

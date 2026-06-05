@@ -29,6 +29,7 @@ class ProductPayload(BaseModel):
     cover_image: str | None = None
     price: Decimal
     sort_order: int = 0
+    sold_count: int = 0
 
 
 class ProductUpdatePayload(BaseModel):
@@ -38,6 +39,7 @@ class ProductUpdatePayload(BaseModel):
     cover_image: str | None = None
     price: Decimal | None = None
     sort_order: int | None = None
+    sold_count: int | None = None
 
 
 def _product_dict(product: Product, stock: int = 0, category_name: str | None = None) -> dict[str, Any]:
@@ -50,6 +52,7 @@ def _product_dict(product: Product, stock: int = 0, category_name: str | None = 
         "cover_image": product.cover_image,
         "price": str(product.price),
         "sort_order": product.sort_order,
+        "sold_count": product.sold_count or 0,
         "stock": stock,
         "available_stock": stock,
         "status": "on_sale" if stock > 0 else "sold_out",

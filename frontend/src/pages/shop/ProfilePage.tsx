@@ -77,10 +77,11 @@ export default function ProfilePage() {
       setOrdersError("")
       try {
         const res = user.email
-          ? await api.post("/orders/query", { contact_info: user.email })
+          ? await api.post("/orders/query", { contact_info: user.email, offset: 0, limit: 100 })
           : await api.get("/orders/mine")
         if (cancelled) return
-        setOrders(Array.isArray(res.data.data) ? res.data.data : [])
+        const payload = res.data.data
+        setOrders(Array.isArray(payload) ? payload : (payload?.items || []))
         setOrdersLoaded(true)
       } catch (err: any) {
         if (cancelled) return
@@ -117,20 +118,8 @@ export default function ProfilePage() {
   return (
     <div className="figma-web-container px-5 pb-24 pt-8 md:px-0 md:pt-[clamp(28px,1.9vw,48px)]">
       <section className="grid w-full gap-5 md:grid-cols-[minmax(240px,280px)_1fr]">
-        <aside className="rounded-[22px] border border-[#dfe5ed] bg-white p-4 shadow-[0_20px_46px_-38px_rgba(10,18,31,0.38)] md:min-h-[560px]">
-          <div className="rounded-[18px] bg-[#e8f2ff] p-5">
-            <img
-              src="/images/avatar_male_15.png"
-              alt={displayName}
-              className="h-16 w-16 rounded-full border border-[#d8e4f4] bg-white object-cover shadow-[0_18px_36px_-26px_rgba(14,75,235,0.5)]"
-            />
-            <p className="mt-4 truncate text-[18px] font-bold leading-6 text-[#111827]">{displayName}</p>
-            <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#0e4beb] shadow-[0_10px_22px_-18px_rgba(14,75,235,0.45)]">
-              {roleLabel}
-            </span>
-          </div>
-
-          <nav className="mt-4 grid gap-2">
+        <aside className="self-start rounded-[22px] border border-[#dfe5ed] bg-white p-4 shadow-[0_20px_46px_-38px_rgba(10,18,31,0.38)]">
+          <nav className="grid gap-2">
             <button
               type="button"
               onClick={() => setActiveSection("profile")}
@@ -169,6 +158,22 @@ export default function ProfilePage() {
 
         <div className="space-y-5">
           {showProfile && (
+          <>
+          <section className="flex flex-col gap-4 rounded-[18px] border border-[#d8e4f4] bg-[#e8f2ff] p-5 shadow-[0_20px_46px_-38px_rgba(10,18,31,0.38)] sm:flex-row sm:items-center">
+            <img
+              src="/images/avatar_male_15.png"
+              alt={displayName}
+              className="h-16 w-16 shrink-0 rounded-full border border-[#d8e4f4] bg-white object-cover shadow-[0_18px_36px_-26px_rgba(14,75,235,0.5)]"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[18px] font-bold leading-6 text-[#111827]">{displayName}</p>
+              <p className="mt-1 text-[13px] font-semibold text-[#6b7990]">{formatValue(user.email)}</p>
+            </div>
+            <span className="inline-flex w-fit rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-[#0e4beb] shadow-[0_10px_22px_-18px_rgba(14,75,235,0.45)]">
+              {roleLabel}
+            </span>
+          </section>
+
           <section className="overflow-hidden rounded-[24px] border border-[#dfe5ed] bg-white shadow-[0_24px_60px_-42px_rgba(10,18,31,0.42)]">
             <div id="profile-info" className="p-6 md:p-9">
               <h2 className="text-[20px] font-bold text-[#111827]">{t("profile.accountInfo")}</h2>
@@ -184,6 +189,7 @@ export default function ProfilePage() {
               </div>
             </div>
           </section>
+          </>
           )}
 
           {showOrders && (

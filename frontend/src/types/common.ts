@@ -16,7 +16,7 @@ export interface Category {
 export interface Product {
   id: number; category_id: number; name: string; description: string
   cover_image: string | null; price: string; sort_order: number
-  available_stock: number; is_on_sale: boolean; category_name?: string
+  available_stock: number; sold_count: number; is_on_sale: boolean; category_name?: string
 }
 
 export interface ProductDetail extends Product { stock_count?: number; category_name: string }

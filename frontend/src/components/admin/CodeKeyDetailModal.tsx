@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { Modal } from "@/components/ui/Modal"
 
+const CODE_VALUE_MAX_LENGTH = 1000
+
 export interface CodeKeyStockItem {
   id: number
   product_id: number
@@ -92,6 +94,7 @@ export default function CodeKeyDetailModal({
   const deletableCodes = useMemo(() => codes.filter((code) => code.status !== "assigned" && !code.order_id), [codes])
   const selectedCodes = useMemo(() => codes.filter((code) => selectedIds.includes(code.id)), [codes, selectedIds])
   const allDeletableSelected = deletableCodes.length > 0 && deletableCodes.every((code) => selectedIds.includes(code.id))
+  const editingValueTooLong = editingValue.trim().length > CODE_VALUE_MAX_LENGTH
 
   const startEdit = (code: CodeKeyItem) => {
     setEditingId(code.id)
@@ -113,10 +116,10 @@ export default function CodeKeyDetailModal({
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={stock ? `${stock.product_name} · 卡密明细` : "卡密明细"} className="md:max-w-[1120px] xl:max-w-[1180px]">
-      <div className="space-y-4">
+    <Modal open={open} onClose={onClose} title={stock ? `${stock.product_name} · 卡密明细` : "卡密明细"} className="code-key-detail-modal md:max-w-[1120px] xl:max-w-[1180px]">
+      <div className="code-key-detail space-y-4">
         {stock && (
-          <div className="grid gap-3 rounded-[14px] bg-[#f6f9fe] p-4 text-14 sm:grid-cols-4">
+          <div className="code-key-summary grid gap-3 rounded-[14px] bg-[#f6f9fe] p-4 text-14 sm:grid-cols-4">
             <div><span className="block text-[#8e99aa]">未使用</span><strong className="text-success-600">{stock.unused_count}</strong></div>
             <div><span className="block text-[#8e99aa]">已发卡</span><strong className="text-primary-600">{stock.assigned_count}</strong></div>
             <div><span className="block text-[#8e99aa]">总库存</span><strong className="text-[#111827]">{stock.total_count}</strong></div>
@@ -124,19 +127,19 @@ export default function CodeKeyDetailModal({
           </div>
         )}
 
-        <div className="flex flex-col gap-3 rounded-[14px] border border-[#edf1f6] bg-white px-4 py-3 text-14 sm:flex-row sm:items-center sm:justify-between">
+        <div className="code-key-toolbar flex flex-col gap-3 rounded-[14px] border border-[#edf1f6] bg-white px-4 py-3 text-14 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-[#6b7990]">已选 {selectedIds.length} 条</span>
           <button
             onClick={() => onBatchDelete(selectedCodes)}
             disabled={selectedIds.length === 0 || loading}
-            className="h-9 rounded-[10px] bg-danger-50 px-4 text-13 font-semibold text-danger-500 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="admin-action-button admin-action-button-danger h-9 disabled:cursor-not-allowed disabled:opacity-50"
           >
             批量删除
           </button>
         </div>
 
-        <div className="overflow-x-auto rounded-[14px] border border-[#edf1f6]">
-          <table className="w-full min-w-[960px] table-fixed text-14">
+        <div className="code-key-table-wrap overflow-x-auto rounded-[14px] border border-[#edf1f6]">
+          <table className="code-key-table w-full min-w-[960px] table-fixed text-14">
             <colgroup>
               <col className="w-[48px]" />
               <col className="w-[72px]" />
@@ -145,7 +148,7 @@ export default function CodeKeyDetailModal({
               <col className="w-[30%]" />
               <col className="w-[152px]" />
             </colgroup>
-            <thead className="bg-[#fbfdff] text-[#8e99aa]">
+            <thead className="code-key-table-head bg-[#fbfdff] text-[#8e99aa]">
               <tr>
                 <th className="px-4 py-4 text-left font-medium">
                   <input
@@ -158,12 +161,12 @@ export default function CodeKeyDetailModal({
                 </th>
                 <th className="px-4 py-4 text-left font-medium">ID</th>
                 <th className="px-4 py-4 text-left font-medium">卡密</th>
-                <th className="px-4 py-4 text-left font-medium">状态</th>
+                <th className="px-4 py-4 text-center font-medium">状态</th>
                 <th className="px-4 py-4 text-left font-medium">联系方式</th>
-                <th className="px-4 py-4 text-right font-medium">操作</th>
+                <th className="px-4 py-4 text-center font-medium">操作</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-[#edf1f6] text-[#293344]">
+            <tbody className="code-key-table-body divide-y divide-[#edf1f6] text-[#293344]">
               {loading && Array.from({ length: 4 }).map((_, index) => (
                 <tr key={index}><td colSpan={6} className="px-4 py-4"><div className="h-9 animate-pulse rounded-[10px] bg-[#f1f5fb]" /></td></tr>
               ))}
@@ -171,7 +174,7 @@ export default function CodeKeyDetailModal({
                 const isEditing = editingId === code.id
                 const locked = code.status === "assigned" || !!code.order_id
                 return (
-                  <tr key={code.id}>
+                  <tr key={code.id} className="code-key-row">
                     <td className="px-4 py-4">
                       <input
                         type="checkbox"
@@ -184,12 +187,17 @@ export default function CodeKeyDetailModal({
                     <td className="px-4 py-4 font-medium text-[#6b7990]">#{code.id}</td>
                     <td className="px-4 py-4">
                       {isEditing ? (
-                        <input value={editingValue} onChange={(event) => setEditingValue(event.target.value)} className="h-9 w-full rounded-[10px] border border-[#dfe6ef] px-3 font-mono text-13 outline-none focus:border-primary-500" />
+                        <div>
+                          <input value={editingValue} onChange={(event) => setEditingValue(event.target.value)} className="h-9 w-full rounded-[10px] border border-[#dfe6ef] px-3 font-mono text-13 outline-none focus:border-primary-500" />
+                          <p className={`mt-1 text-12 ${editingValueTooLong ? "text-danger-500" : "text-[#8e99aa]"}`}>
+                            {editingValue.trim().length} / {CODE_VALUE_MAX_LENGTH}
+                          </p>
+                        </div>
                       ) : (
-                        <span className="break-all font-mono text-13">{code.code_value}</span>
+                        <span className="code-key-value break-all font-mono text-13">{code.code_value}</span>
                       )}
                     </td>
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-4 text-center">
                       {isEditing ? (
                         <select value={editingStatus} onChange={(event) => setEditingStatus(event.target.value)} disabled={locked} className="h-9 w-full rounded-[10px] border border-[#dfe6ef] px-2 text-13 outline-none focus:border-primary-500 disabled:opacity-60">
                           <option value="unused">未使用</option>
@@ -207,17 +215,17 @@ export default function CodeKeyDetailModal({
                         {code.contact_info || "-"}
                       </span>
                     </td>
-                    <td className="px-4 py-4">
-                      <div className="flex flex-nowrap justify-end gap-2">
+                    <td className="px-4 py-4 text-center">
+                      <div className="admin-action-group">
                         {isEditing ? (
                           <>
-                            <button onClick={() => setEditingId(null)} disabled={savingId === code.id} className="h-8 rounded-[10px] border border-[#dfe6ef] px-3 text-13 font-semibold text-[#5d6675]">取消</button>
-                            <button onClick={() => submitEdit(code)} disabled={savingId === code.id || !editingValue.trim()} className="h-8 rounded-[10px] bg-primary-500 px-3 text-13 font-semibold text-white disabled:opacity-50">保存</button>
+                            <button onClick={() => setEditingId(null)} disabled={savingId === code.id} className="admin-action-button admin-action-button-muted">取消</button>
+                            <button onClick={() => submitEdit(code)} disabled={savingId === code.id || !editingValue.trim() || editingValueTooLong} className="admin-action-button admin-action-button-primary disabled:opacity-50">保存</button>
                           </>
                         ) : (
                           <>
-                            <button onClick={() => startEdit(code)} disabled={locked} className="h-8 rounded-[10px] border border-[#dfe6ef] px-3 text-13 font-semibold text-primary-600 disabled:cursor-not-allowed disabled:opacity-45">编辑</button>
-                            <button onClick={() => onDelete(code)} disabled={locked} className="h-8 rounded-[10px] bg-danger-50 px-3 text-13 font-semibold text-danger-500 disabled:cursor-not-allowed disabled:opacity-45">删除</button>
+                            <button onClick={() => startEdit(code)} disabled={locked} className="admin-action-button disabled:cursor-not-allowed disabled:opacity-45">编辑</button>
+                            <button onClick={() => onDelete(code)} disabled={locked} className="admin-action-button admin-action-button-danger disabled:cursor-not-allowed disabled:opacity-45">删除</button>
                           </>
                         )}
                       </div>

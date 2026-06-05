@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Request, HTTPException
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas.order import OrderCreateRequest
@@ -146,10 +146,14 @@ async def get_my_orders(current_user: dict = Depends(get_current_user_optional),
 async def query_orders(request: Request, db: AsyncSession = Depends(get_db)):
     body = await request.json()
     contact_info = body.get("contact_info", "")
+    offset = max(int(body.get("offset", 0) or 0), 0)
+    limit = min(max(int(body.get("limit", 10) or 10), 1), 50)
     if not contact_info:
         return {"code": 400, "msg": "请输入联系方式", "data": None}
 
-    stmt = select(Order).where(Order.contact_info == contact_info).order_by(Order.created_at.desc())
+    filters = Order.contact_info == contact_info
+    total = await db.scalar(select(func.count()).select_from(Order).where(filters))
+    stmt = select(Order).where(filters).order_by(Order.created_at.desc()).offset(offset).limit(limit)
     result = await db.execute(stmt)
     orders = result.scalars().all()
 
@@ -167,4 +171,4 @@ async def query_orders(request: Request, db: AsyncSession = Depends(get_db)):
             "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S") if order.created_at else None,
         })
 
-    return {"code": 200, "msg": "success", "data": items}
+    return {"code": 200, "msg": "success", "data": {"items": items, "total": total or 0, "offset": offset, "limit": limit}}

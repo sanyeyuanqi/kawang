@@ -178,6 +178,7 @@ export default function ProductDetailPage() {
         <div className="mt-5 flex flex-wrap gap-3">
           <span className="rounded-full bg-[#e8faf4] px-4 py-2 text-[13px] font-medium text-[#08a678]">{st("自动发卡")}</span>
           <span className="rounded-full bg-[#fff6df] px-4 py-2 text-[13px] font-medium text-[#f09e1f]">{st("库存")} {product.available_stock}</span>
+          <span className="rounded-full bg-[#fff1f1] px-4 py-2 text-[13px] font-medium text-[#ec3c30]">{st("已售")} {product.sold_count ?? 0}</span>
           <span className="rounded-full bg-[#ebf2ff] px-4 py-2 text-[13px] font-medium text-[#0e4beb]">{st("售后在线")}</span>
         </div>
 
@@ -230,6 +231,7 @@ export default function ProductDetailPage() {
                 <div className="absolute bottom-6 left-6 flex gap-3">
                   <span className="rounded-full bg-[#e8faf4] px-4 py-2 text-[13px] font-medium tracking-normal text-[#08a678]">{st("自动发卡")}</span>
                   <span className="rounded-full bg-[#fff6df] px-4 py-2 text-[13px] font-medium tracking-normal text-[#f09e1f]">{st("库存")} {product.available_stock}</span>
+                  <span className="rounded-full bg-[#fff1f1] px-4 py-2 text-[13px] font-medium tracking-normal text-[#ec3c30]">{st("已售")} {product.sold_count ?? 0}</span>
                   <span className="rounded-full bg-white/80 px-4 py-2 text-[13px] font-medium tracking-normal text-[#0e4beb]">{st("售后在线")}</span>
                 </div>
               </div>

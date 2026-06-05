@@ -284,14 +284,14 @@ export default function AdminCodeKeysPage() {
       align: "center",
       width: 220,
       render: (item) => (
-        <div className="flex justify-center gap-2">
-          <button onClick={(event) => { event.stopPropagation(); openDetail(item) }} className="h-8 rounded-[10px] border border-[#dfe6ef] bg-white px-4 text-13 font-semibold text-primary-600 hover:bg-[#eef3ff]">
+        <div className="admin-action-group">
+          <button onClick={(event) => { event.stopPropagation(); openDetail(item) }} className="admin-action-button">
             明细
           </button>
-          <button onClick={(event) => { event.stopPropagation(); setImportProductId(item.product_id); setImportOpen(true) }} className="h-8 rounded-[10px] border border-[#dfe6ef] bg-white px-4 text-13 font-semibold text-success-600 hover:bg-success-50">
+          <button onClick={(event) => { event.stopPropagation(); setImportProductId(item.product_id); setImportOpen(true) }} className="admin-action-button admin-action-button-success">
             导入
           </button>
-          <button onClick={(event) => { event.stopPropagation(); setDeleteStockTarget(item) }} className="h-8 rounded-[10px] bg-danger-50 px-4 text-13 font-semibold text-danger-500 hover:bg-red-100">
+          <button onClick={(event) => { event.stopPropagation(); setDeleteStockTarget(item) }} className="admin-action-button admin-action-button-danger">
             删除
           </button>
         </div>

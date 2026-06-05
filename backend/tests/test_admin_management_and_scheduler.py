@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session_factory
-from app.models.code_key import CodeKey, CodeKeyStatus
+from app.models.code_key import CODE_VALUE_MAX_LENGTH, CodeKey, CodeKeyStatus
 from app.models.order import Order, OrderStatus
 from app.models.product import Product
 from app.services.code_service import CodeService
@@ -106,9 +106,26 @@ async def test_admin_category_product_and_code_key_crud(client: AsyncClient, adm
     assert import_response.status_code == 200
     assert import_response.json()["data"]["imported_count"] == 2
 
+    max_length_code = "A" * CODE_VALUE_MAX_LENGTH
+    max_length_response = await client.post(
+        "/admin/code-keys/import",
+        json={"product_id": product_id, "codes": [max_length_code]},
+        headers=headers,
+    )
+    assert max_length_response.status_code == 200
+    assert max_length_response.json()["data"]["imported_count"] == 1
+
+    over_length_response = await client.post(
+        "/admin/code-keys/import",
+        json={"product_id": product_id, "codes": ["B" * (CODE_VALUE_MAX_LENGTH + 1)]},
+        headers=headers,
+    )
+    assert over_length_response.status_code == 400
+    assert f"{CODE_VALUE_MAX_LENGTH} 个字符" in over_length_response.json()["msg"]
+
     codes_response = await client.get(f"/admin/code-keys/{product_id}/codes", headers=headers)
     assert codes_response.status_code == 200
-    assert codes_response.json()["data"]["total"] == 2
+    assert codes_response.json()["data"]["total"] == 3
     code_ids = [item["id"] for item in codes_response.json()["data"]["items"]]
 
     batch_delete_response = await client.request(
@@ -118,7 +135,7 @@ async def test_admin_category_product_and_code_key_crud(client: AsyncClient, adm
         headers=headers,
     )
     assert batch_delete_response.status_code == 200
-    assert batch_delete_response.json()["data"]["deleted_count"] == 2
+    assert batch_delete_response.json()["data"]["deleted_count"] == 3
 
     codes_after_delete_response = await client.get(f"/admin/code-keys/{product_id}/codes", headers=headers)
     assert codes_after_delete_response.status_code == 200

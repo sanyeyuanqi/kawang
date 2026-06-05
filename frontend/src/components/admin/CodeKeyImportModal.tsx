@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react"
 import { Modal } from "@/components/ui/Modal"
 
+const CODE_VALUE_MAX_LENGTH = 1000
+
 export interface CodeKeyProductOption {
   id: number
   name: string
@@ -27,9 +29,13 @@ export default function CodeKeyImportModal({ open, products, defaultProductId, l
   }, [defaultProductId, open, products])
 
   const codeCount = codes.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).length
+  const overLength = codes
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .some((item) => item.length > CODE_VALUE_MAX_LENGTH)
 
   const submit = async () => {
-    if (!productId || !codes.trim()) return
+    if (!productId || !codes.trim() || overLength) return
     await onSubmit({ product_id: productId, codes })
   }
 
@@ -64,14 +70,19 @@ export default function CodeKeyImportModal({ open, products, defaultProductId, l
         </label>
 
         <div className="rounded-[12px] bg-[#eef3ff] px-4 py-3 text-13 font-medium text-primary-600">
-          当前将导入 {codeCount} 条卡密，系统会自动过滤空行和重复行。
+          当前将导入 {codeCount} 条卡密，单条最长 {CODE_VALUE_MAX_LENGTH} 个字符，系统会自动过滤空行和重复行。
         </div>
+        {overLength && (
+          <p className="rounded-[12px] bg-danger-50 px-4 py-3 text-13 font-semibold text-danger-500">
+            单条卡密不能超过 {CODE_VALUE_MAX_LENGTH} 个字符
+          </p>
+        )}
 
         <div className="flex gap-3 pt-2">
           <button type="button" onClick={onClose} disabled={loading} className="h-11 flex-1 rounded-[12px] border border-[#dfe6ef] bg-white text-14 font-semibold text-[#4f5b70] disabled:opacity-60">
             取消
           </button>
-          <button type="button" onClick={submit} disabled={loading || !productId || !codes.trim()} className="h-11 flex-1 rounded-[12px] bg-primary-500 text-14 font-semibold text-white shadow-lg shadow-primary-500/20 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={submit} disabled={loading || !productId || !codes.trim() || overLength} className="h-11 flex-1 rounded-[12px] bg-primary-500 text-14 font-semibold text-white shadow-lg shadow-primary-500/20 disabled:cursor-not-allowed disabled:opacity-50">
             {loading ? "导入中..." : "确认导入"}
           </button>
         </div>

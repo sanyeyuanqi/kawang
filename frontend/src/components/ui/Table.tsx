@@ -39,10 +39,10 @@ export function Table<T extends object>({
   }
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[920px] text-14">
-        <thead className="text-[#8e99aa]">
-          <tr className="border-b border-[#edf1f6]">
+    <div className="admin-table-wrap overflow-x-auto">
+      <table className="admin-table w-full min-w-[920px] text-14">
+        <thead className="admin-table-head text-[#8e99aa]">
+          <tr className="admin-table-head-row border-b border-[#edf1f6]">
             {columns.map((column) => (
               <th
                 key={column.key}
@@ -54,11 +54,11 @@ export function Table<T extends object>({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[#edf1f6] text-[#293344]">
+        <tbody className="admin-table-body divide-y divide-[#edf1f6] text-[#293344]">
           {loading && Array.from({ length: 5 }).map((_, index) => (
             <tr key={`loading-${index}`}>
               <td colSpan={columns.length} className="px-5 py-5">
-                <div className="h-10 animate-pulse rounded-[12px] bg-[#f1f5fb]" />
+                <div className="admin-dashboard-skeleton h-10 animate-pulse rounded-[12px] bg-[#f1f5fb]" />
               </td>
             </tr>
           ))}
@@ -67,7 +67,7 @@ export function Table<T extends object>({
             <tr
               key={resolveRowKey(record)}
               onClick={() => onRowClick?.(record)}
-              className={onRowClick ? "cursor-pointer transition-colors hover:bg-[#f8fbff]" : "transition-colors hover:bg-[#f8fbff]"}
+              className={onRowClick ? "admin-table-row cursor-pointer transition-colors hover:bg-[#f8fbff]" : "admin-table-row transition-colors hover:bg-[#f8fbff]"}
             >
               {columns.map((column) => (
                 <td

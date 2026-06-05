@@ -17,6 +17,7 @@ export interface AdminProductItem {
   cover_image?: string | null
   price: string
   sort_order: number
+  sold_count: number
   stock: number
   available_stock: number
   status: "on_sale" | "sold_out"
@@ -29,6 +30,7 @@ interface ProductFormState {
   description: string
   price: string
   sort_order: string
+  sold_count: string
   cover_image: string
 }
 
@@ -46,6 +48,7 @@ const emptyForm: ProductFormState = {
   description: "",
   price: "",
   sort_order: "0",
+  sold_count: "0",
   cover_image: "",
 }
 
@@ -64,6 +67,7 @@ export default function ProductFormModal({ open, product, categories, onClose, o
         description: product.description || "",
         price: product.price,
         sort_order: String(product.sort_order),
+        sold_count: String(product.sold_count ?? 0),
         cover_image: product.cover_image || "",
       })
     } else {
@@ -100,6 +104,7 @@ export default function ProductFormModal({ open, product, categories, onClose, o
       cover_image: form.cover_image || null,
       price: form.price,
       sort_order: Number(form.sort_order || 0),
+      sold_count: Number(form.sold_count || 0),
     }
 
     try {
@@ -160,6 +165,17 @@ export default function ProductFormModal({ open, product, categories, onClose, o
               placeholder="0"
             />
           </label>
+          <label className="space-y-2 text-14 font-medium text-[#3f495b]">
+            <span>已售数量</span>
+            <input
+              type="number"
+              min={0}
+              value={form.sold_count}
+              onChange={(event) => setForm({ ...form, sold_count: event.target.value })}
+              className="h-12 w-full rounded-[12px] border border-[#dfe6ef] bg-white px-4 text-14 outline-none focus:border-primary-500"
+              placeholder="0"
+            />
+          </label>
         </div>
 
         <label className="block space-y-2 text-14 font-medium text-[#3f495b]">
@@ -178,6 +194,7 @@ export default function ProductFormModal({ open, product, categories, onClose, o
             value={form.cover_image}
             onChange={handleUpload}
             onRemove={() => setForm((prev) => ({ ...prev, cover_image: "" }))}
+            previewClassName="aspect-video"
           />
           {uploading && <p className="text-12 text-[#6b7990]">图片上传中...</p>}
         </div>

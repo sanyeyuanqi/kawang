@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import api from "@/api/client"
 import { formatPrice } from "@/lib/utils"
 import MobilePhoneFrame from "@/components/shop/MobilePhoneFrame"
@@ -15,6 +15,8 @@ interface OrderRecord {
   paid_at: string | null
   created_at: string | null
 }
+
+const PAGE_SIZE = 10
 
 function normalizeCode(codeValue: string) {
   return codeValue.replace(/^卡密\d*[：:]\s*/, "")
@@ -35,10 +37,49 @@ export default function OrderQueryPage() {
   const { st } = useLanguage()
   const [contactInfo, setContactInfo] = useState("")
   const [orders, setOrders] = useState<OrderRecord[]>([])
+  const [total, setTotal] = useState(0)
+  const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState("")
   const [searched, setSearched] = useState(false)
   const [copiedOrderNo, setCopiedOrderNo] = useState("")
+  const loadMoreRef = useRef<HTMLDivElement | null>(null)
+
+  const hasMore = searched && orders.length < total
+
+  const parseOrderPayload = (data: any) => {
+    if (Array.isArray(data)) {
+      return { items: data as OrderRecord[], total: data.length, offset: 0, limit: data.length || PAGE_SIZE }
+    }
+    return {
+      items: (data?.items || []) as OrderRecord[],
+      total: Number(data?.total || 0),
+      offset: Number(data?.offset || 0),
+      limit: Number(data?.limit || PAGE_SIZE),
+    }
+  }
+
+  const loadOrdersPage = async (nextOffset: number, append = false) => {
+    if (append) setLoadingMore(true)
+    else setLoading(true)
+    try {
+      const res = await api.post("/orders/query", {
+        contact_info: contactInfo.trim(),
+        offset: nextOffset,
+        limit: PAGE_SIZE,
+      })
+      const payload = parseOrderPayload(res.data.data)
+      setOrders(prev => append ? [...prev, ...payload.items] : payload.items)
+      setTotal(payload.total)
+      setOffset(payload.offset + payload.items.length)
+    } catch (err: any) {
+      setError(err.response?.data?.msg || st("查询失败，请稍后重试"))
+    } finally {
+      if (append) setLoadingMore(false)
+      else setLoading(false)
+    }
+  }
 
   const query = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -46,20 +87,31 @@ export default function OrderQueryPage() {
     if (!contactInfo.trim()) {
       setSearched(false)
       setOrders([])
-      setError(st("请输入手机号 / 邮箱 / 订单号"))
+      setTotal(0)
+      setOffset(0)
+      setError(st("请输入联系方式 / 订单号"))
       return
     }
     setSearched(true)
-    setLoading(true)
-    try {
-      const res = await api.post("/orders/query", { contact_info: contactInfo.trim() })
-      setOrders(res.data.data || [])
-    } catch (err: any) {
-      setError(err.response?.data?.msg || st("查询失败，请稍后重试"))
-    } finally {
-      setLoading(false)
-    }
+    setOrders([])
+    setTotal(0)
+    setOffset(0)
+    await loadOrdersPage(0)
   }
+
+  useEffect(() => {
+    const target = loadMoreRef.current
+    if (!target || !hasMore || loading || loadingMore) return
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting && hasMore && !loading && !loadingMore) {
+        loadOrdersPage(offset, true)
+      }
+    }, { rootMargin: "260px 0px" })
+
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [hasMore, loading, loadingMore, offset])
 
   const visibleOrders = searched ? orders : []
   const primaryOrder = visibleOrders[0]
@@ -85,7 +137,7 @@ export default function OrderQueryPage() {
             <input
               value={contactInfo}
               onChange={event => setContactInfo(event.target.value)}
-              placeholder={st("查询的联系方式")}
+              placeholder={st("联系方式 / 订单号")}
               className="h-[50px] w-full rounded-[14px] border border-[#dfe5ed] bg-[#fafbfd] px-5 text-[16px] text-[#0e131e] outline-none placeholder:text-[#8b98ad] focus:border-[#0e4beb]"
             />
             {error && <p className="mt-2 text-[12px] text-danger-500">{error}</p>}
@@ -122,31 +174,23 @@ export default function OrderQueryPage() {
 
       <div className="figma-web-container hidden min-h-screen pb-24 pt-8 md:block md:pt-[clamp(47px,2.96vw,84px)]">
         <div className="order-query-grid">
-          <div className="space-y-10 md:space-y-[clamp(23px,1.41vw,40px)]">
+          <div className="order-query-form-sticky space-y-10 md:space-y-[clamp(23px,1.41vw,40px)]">
             <section className="rounded-[30px] border border-[#dfe5ed] bg-white p-6 shadow-[0_16px_36px_-8px_rgba(10,18,31,0.1)] md:min-h-[clamp(300px,18.5vw,520px)] md:rounded-[clamp(19px,1.2vw,34px)] md:p-[clamp(34px,2.11vw,60px)]">
               <h1 className="text-[26px] font-bold text-[#0e131e] md:text-[clamp(16px,0.99vw,28px)]">{st("查询订单")}</h1>
               <p className="mt-3 text-[16px] leading-7 text-[#6b7990] md:text-[clamp(11px,0.63vw,18px)] md:leading-normal">{st("无需登录，输入订单号或下单时填写的联系方式即可查询。")}</p>
               <form onSubmit={query} className="mt-10 md:mt-[clamp(23px,1.41vw,40px)]">
-                <label className="block text-[16px] text-[#6b7990] md:text-[clamp(10px,0.56vw,16px)]">{st("联系方式 / 订单号")}</label>
+                <label className="sr-only">{st("联系方式 / 订单号")}</label>
                 <input
                   value={contactInfo}
                   onChange={event => setContactInfo(event.target.value)}
-                  placeholder={st("KW20260601001 / 手机号 / 微信 / QQ")}
-                  className="mt-4 h-[62px] w-full rounded-[16px] border border-[#dfe5ed] bg-[#fafbfd] px-[22px] text-[16px] outline-none focus:border-[#0e4beb] md:mt-[clamp(10px,0.63vw,18px)] md:h-[clamp(35px,2.18vw,62px)] md:rounded-[clamp(9px,0.56vw,16px)] md:px-[clamp(12px,0.77vw,22px)] md:text-[clamp(11px,0.56vw,16px)]"
+                  placeholder={st("联系方式 / 订单号")}
+                  className="h-[62px] w-full rounded-[16px] border border-[#dfe5ed] bg-[#fafbfd] px-[22px] text-[16px] outline-none placeholder:text-[#8b98ad] focus:border-[#0e4beb] md:h-[clamp(35px,2.18vw,62px)] md:rounded-[clamp(9px,0.56vw,16px)] md:px-[clamp(12px,0.77vw,22px)] md:text-[clamp(11px,0.56vw,16px)]"
                 />
                 <p className="mt-2 min-h-[18px] text-[13px] leading-[18px] text-danger-500">{error}</p>
                 <button disabled={loading} className="mt-3 h-[56px] w-full rounded-[14px] bg-[#0e4beb] text-[16px] font-medium text-white shadow-[0_8px_22px_-8px_rgba(10,18,31,0.14)] disabled:opacity-60 md:mt-[clamp(8px,0.49vw,14px)] md:h-[clamp(32px,1.97vw,56px)] md:rounded-[clamp(8px,0.49vw,14px)] md:text-[clamp(11px,0.56vw,16px)]">
                   {loading ? st("查询中...") : st("查询订单")}
                 </button>
-                <div className="mt-5 rounded-[14px] bg-[#ebf2ff] px-5 py-3 text-center text-[14px] font-medium leading-5 text-[#0e4beb] md:mt-[clamp(12px,0.7vw,20px)] md:px-[clamp(12px,0.72vw,21px)] md:py-[clamp(7px,0.42vw,12px)] md:text-[clamp(10px,0.5vw,14px)]">
-                  {st("支持免登录查询：已支付、待支付、已发卡、售后中、已退款")}
-                </div>
               </form>
-            </section>
-
-            <section className="rounded-[30px] border border-[#dfe5ed] bg-white p-6 md:h-[clamp(118px,7.4vw,210px)] md:p-[clamp(34px,2.11vw,60px)]">
-              <h2 className="text-[24px] font-bold text-[#0e131e] md:text-[clamp(15px,0.92vw,26px)]">{st("无结果状态")}</h2>
-              <p className="mt-4 text-[16px] leading-7 text-[#6b7990] md:text-[clamp(11px,0.63vw,18px)] md:leading-normal">{st("当订单号不存在时，提示用户检查输入并提供客服入口。")}</p>
             </section>
           </div>
 
@@ -154,7 +198,7 @@ export default function OrderQueryPage() {
             <div className="flex flex-wrap items-center gap-5 md:gap-[clamp(8px,0.78vw,22px)]">
               <h2 className="text-[28px] font-bold text-[#0e131e] md:text-[clamp(17px,1.06vw,30px)]">{st("查询结果")}</h2>
               {visibleOrders.length > 0 && (
-                <p className="text-[15px] text-[#737d8f] md:text-[clamp(10px,0.53vw,15px)]">{st("共查询到")} {visibleOrders.length} {st("条购买记录")}</p>
+                <p className="text-[15px] text-[#737d8f] md:text-[clamp(10px,0.53vw,15px)]">{st("共查询到")} {total} {st("条购买记录")}</p>
               )}
             </div>
             {searched && !loading && orders.length === 0 && (
@@ -203,6 +247,11 @@ export default function OrderQueryPage() {
                 </article>
               ))}
             </div>
+            {searched && orders.length > 0 && (
+              <div ref={loadMoreRef} className="mt-6 min-h-10 text-center text-[13px] font-semibold text-[#6b7990]">
+                {loadingMore ? st("加载中...") : hasMore ? st("继续下拉加载更多") : st("已加载全部")}
+              </div>
+            )}
           </section>
         </div>
       </div>

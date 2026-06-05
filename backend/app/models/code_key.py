@@ -4,6 +4,8 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
+CODE_VALUE_MAX_LENGTH = 1000
+
 class CodeKeyStatus(str, enum.Enum):
     UNUSED = "unused"
     RESERVED = "reserved"
@@ -14,7 +16,7 @@ class CodeKey(Base):
     __tablename__ = "code_key"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False)
-    code_value: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    code_value: Mapped[str] = mapped_column(String(CODE_VALUE_MAX_LENGTH), nullable=False)
     status: Mapped[CodeKeyStatus] = mapped_column(String(20), default=CodeKeyStatus.UNUSED, nullable=False, index=True)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("order.id", ondelete="SET NULL"), nullable=True)
     reserved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

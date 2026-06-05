@@ -56,6 +56,7 @@ async def get_products(
             "id": p.id, "category_id": p.category_id, "category_name": category_name or "", "name": p.name,
             "description": p.description, "cover_image": p.cover_image,
             "price": str(p.price), "sort_order": p.sort_order,
+            "sold_count": p.sold_count or 0,
             "available_stock": stock or 0, "is_on_sale": (stock or 0) > 0,
         })
 
@@ -93,7 +94,8 @@ async def get_product_detail(
         "id": product.id, "category_id": product.category_id, "category_name": cat_name,
         "name": product.name, "description": product.description,
         "cover_image": product.cover_image, "price": str(product.price),
-        "sort_order": product.sort_order, "available_stock": stock, "is_on_sale": stock > 0,
+        "sort_order": product.sort_order, "sold_count": product.sold_count or 0,
+        "available_stock": stock, "is_on_sale": stock > 0,
     }
 
     await cache_set_json(RedisKeys.product_detail(product_id), data, PUBLIC_CATALOG_TTL_SECONDS)

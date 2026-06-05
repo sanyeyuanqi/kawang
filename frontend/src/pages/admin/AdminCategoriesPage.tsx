@@ -131,11 +131,11 @@ export default function AdminCategoriesPage() {
       align: "center",
       width: 180,
       render: (item) => (
-        <div className="flex justify-center gap-2">
-          <button onClick={(event) => { event.stopPropagation(); setEditing(item) }} className="h-8 rounded-[10px] border border-[#dfe6ef] bg-white px-4 text-13 font-semibold text-primary-600 hover:bg-[#eef3ff]">
+        <div className="admin-action-group">
+          <button onClick={(event) => { event.stopPropagation(); setEditing(item) }} className="admin-action-button">
             编辑
           </button>
-          <button onClick={(event) => { event.stopPropagation(); setDeleteTarget(item) }} className="h-8 rounded-[10px] bg-danger-50 px-4 text-13 font-semibold text-danger-500 hover:bg-red-100">
+          <button onClick={(event) => { event.stopPropagation(); setDeleteTarget(item) }} className="admin-action-button admin-action-button-danger">
             删除
           </button>
         </div>

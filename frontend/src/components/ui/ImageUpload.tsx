@@ -1,8 +1,25 @@
 import { useState, useCallback, useRef } from "react"
 import { cn, resolveAssetUrl } from "@/lib/utils"
 
-interface Props { value?: string; onChange?: (f: File) => void; onRemove?: () => void; accept?: string; maxSizeMB?: number; className?: string }
-export function ImageUpload({ value, onChange, onRemove, accept = "image/jpeg,image/png,image/webp,image/gif", maxSizeMB = 5, className }: Props) {
+interface Props {
+  value?: string
+  onChange?: (f: File) => void
+  onRemove?: () => void
+  accept?: string
+  maxSizeMB?: number
+  className?: string
+  previewClassName?: string
+}
+
+export function ImageUpload({
+  value,
+  onChange,
+  onRemove,
+  accept = "image/jpeg,image/png,image/webp,image/gif",
+  maxSizeMB = 5,
+  className,
+  previewClassName,
+}: Props) {
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
@@ -10,5 +27,38 @@ export function ImageUpload({ value, onChange, onRemove, accept = "image/jpeg,im
   const maxBytes = maxSizeMB * 1024 * 1024
   const handleFile = useCallback((file: File) => { setError(null); const allowed = accept.split(",").map(t => t.trim()); if (!allowed.includes(file.type)) { setError("仅支持 JPG/PNG/WebP/GIF 图片"); return }; if (file.size > maxBytes) { setError(`图片大小不能超过 ${maxSizeMB}MB`); return }; setPreview(URL.createObjectURL(file)); onChange?.(file) }, [accept, maxBytes, maxSizeMB, onChange])
   const displayUrl = preview || resolveAssetUrl(value) || null
-  return <div className={cn("space-y-2", className)}><div onDragOver={e => { e.preventDefault(); setIsDragOver(true) }} onDragLeave={() => setIsDragOver(false)} onDrop={e => { e.preventDefault(); setIsDragOver(false); const file = e.dataTransfer.files?.[0]; if (file) handleFile(file) }} onClick={() => inputRef.current?.click()} className={cn("relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors", isDragOver ? "border-primary-500 bg-primary-50" : "border-gray-300 hover:border-gray-400 bg-white", displayUrl && "p-2")}>{displayUrl ? <div className="relative group"><img src={displayUrl} alt="preview" className="max-h-48 mx-auto rounded-lg object-contain"/><div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center"><button type="button" onClick={e => { e.stopPropagation(); setPreview(null); onRemove?.() }} className="px-3 py-1.5 bg-danger-500 text-white text-13 rounded-lg">删除</button></div></div> : <div className="text-gray-400"><svg className="w-10 h-10 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg><p className="text-14"><span className="text-primary-500">点击上传</span> 或拖拽图片</p><p className="text-12 mt-1">支持 JPG/PNG/WebP/GIF，最大 {maxSizeMB}MB</p></div>}</div><input ref={inputRef} type="file" accept={accept} onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = "" }} className="hidden"/>{error && <p className="text-12 text-danger-500">{error}</p>}</div>
+  return (
+    <div className={cn("space-y-2", className)}>
+      <div
+        onDragOver={e => { e.preventDefault(); setIsDragOver(true) }}
+        onDragLeave={() => setIsDragOver(false)}
+        onDrop={e => { e.preventDefault(); setIsDragOver(false); const file = e.dataTransfer.files?.[0]; if (file) handleFile(file) }}
+        onClick={() => inputRef.current?.click()}
+        className={cn(
+          "relative cursor-pointer overflow-hidden rounded-xl border-2 border-dashed text-center transition-colors",
+          previewClassName || "aspect-video",
+          isDragOver ? "border-primary-500 bg-primary-50" : "border-gray-300 bg-white hover:border-gray-400"
+        )}
+      >
+        {displayUrl ? (
+          <div className="group relative h-full w-full">
+            <img src={displayUrl} alt="preview" className="h-full w-full object-cover" />
+            <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+              <button type="button" onClick={e => { e.stopPropagation(); setPreview(null); onRemove?.() }} className="rounded-lg bg-danger-500 px-3 py-1.5 text-13 text-white">删除</button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex h-full flex-col items-center justify-center p-6 text-gray-400">
+            <svg className="mx-auto mb-2 h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className="text-14"><span className="text-primary-500">点击上传</span> 或拖拽图片</p>
+            <p className="mt-1 text-12">建议 16:9，支持 JPG/PNG/WebP/GIF，最大 {maxSizeMB}MB</p>
+          </div>
+        )}
+      </div>
+      <input ref={inputRef} type="file" accept={accept} onChange={e => { const file = e.target.files?.[0]; if (file) handleFile(file); e.target.value = "" }} className="hidden" />
+      {error && <p className="text-12 text-danger-500">{error}</p>}
+    </div>
+  )
 }

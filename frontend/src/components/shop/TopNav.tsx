@@ -76,13 +76,13 @@ export default function TopNav({ className = "", containerClassName = "figma-web
             <button
               type="button"
               onClick={() => setLanguageOpen(open => !open)}
-              className={"flex h-[clamp(34px,1.9vw,54px)] min-w-[clamp(92px,5.25vw,136px)] items-center justify-center rounded-[clamp(10px,0.56vw,16px)] border bg-white px-[clamp(12px,0.78vw,22px)] text-[clamp(12px,0.56vw,16px)] font-semibold transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#b8c9e2] hover:shadow-[0_12px_24px_-16px_rgba(10,18,31,0.32)] " + (languageOpen ? "border-[#b8c9e2] text-[#0e4beb] shadow-[0_12px_24px_-18px_rgba(10,18,31,0.28)]" : "border-[#dfe5ed] text-[#111827]")}
+              className={"top-nav-button-glow flex h-[clamp(34px,1.9vw,54px)] min-w-[clamp(92px,5.25vw,136px)] items-center justify-center rounded-[clamp(10px,0.56vw,16px)] border bg-white px-[clamp(12px,0.78vw,22px)] text-[clamp(12px,0.56vw,16px)] font-semibold transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#b8c9e2] " + (languageOpen ? "border-[#b8c9e2] text-[#0e4beb] shadow-[0_12px_24px_-18px_rgba(10,18,31,0.28)]" : "border-[#dfe5ed] text-[#111827]")}
               aria-label={t("nav.translate")}
               aria-expanded={languageOpen}
             >
               <span className="flex h-full items-center gap-[clamp(8px,0.48vw,13px)]">
                 <span className="leading-none">{currentLanguageLabel}</span>
-                <span className={"h-[clamp(7px,0.42vw,11px)] w-[clamp(7px,0.42vw,11px)] border-b-[2px] border-r-[2px] transition duration-200 " + (languageOpen ? "translate-y-[2px] rotate-[225deg] border-[#0e4beb]" : "translate-y-[-2px] rotate-45 border-[#111827]")} />
+                <span className={"top-nav-language-arrow h-[clamp(7px,0.42vw,11px)] w-[clamp(7px,0.42vw,11px)] border-b-[2px] border-r-[2px] transition duration-200 " + (languageOpen ? "translate-y-[2px] rotate-[225deg] border-[#0e4beb]" : "translate-y-[-2px] rotate-45 border-[#111827]")} />
               </span>
             </button>
             {languageOpen && (
@@ -110,7 +110,7 @@ export default function TopNav({ className = "", containerClassName = "figma-web
           {!isAuthenticated && (
             <Link
               to="/orders/query"
-              className="flex h-[clamp(34px,1.9vw,54px)] w-[clamp(90px,5.28vw,150px)] items-center justify-center rounded-[clamp(8px,0.49vw,14px)] border border-[#dfe5ed] bg-white text-[clamp(12px,0.56vw,16px)] font-medium text-[#111827] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#b8c9e2] hover:text-[#0e4beb] hover:shadow-[0_12px_24px_-16px_rgba(10,18,31,0.32)] active:translate-y-0"
+              className="top-nav-button-glow flex h-[clamp(34px,1.9vw,54px)] w-[clamp(90px,5.28vw,150px)] items-center justify-center rounded-[clamp(8px,0.49vw,14px)] border border-[#dfe5ed] bg-white text-[clamp(12px,0.56vw,16px)] font-medium text-[#111827] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#b8c9e2] hover:text-[#0e4beb] active:translate-y-0"
             >
               {t("nav.orderQuery")}
             </Link>
@@ -118,7 +118,7 @@ export default function TopNav({ className = "", containerClassName = "figma-web
           {isAuthenticated && user ? (
             <Link
               to="/profile"
-              className="flex h-[clamp(34px,1.9vw,54px)] w-[clamp(34px,1.9vw,54px)] shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#d8e4f4] bg-[#e8f2ff] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#a9c2ef] hover:shadow-[0_14px_28px_-18px_rgba(14,75,235,0.65)] active:translate-y-0"
+              className="top-nav-button-glow flex h-[clamp(34px,1.9vw,54px)] w-[clamp(34px,1.9vw,54px)] shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#d8e4f4] bg-[#e8f2ff] transition duration-200 ease-out hover:-translate-y-0.5 hover:border-[#a9c2ef] active:translate-y-0"
               title={userDisplayName}
               aria-label={t("nav.profile")}
             >
@@ -131,7 +131,7 @@ export default function TopNav({ className = "", containerClassName = "figma-web
           ) : (
             <Link
               to="/login"
-              className="flex h-[clamp(34px,1.9vw,54px)] w-[clamp(76px,4.44vw,126px)] items-center justify-center rounded-[clamp(8px,0.49vw,14px)] bg-[#e8f2ff] text-[clamp(12px,0.56vw,16px)] font-medium text-[#0e4beb] transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#dbeafe] hover:shadow-[0_12px_24px_-16px_rgba(14,75,235,0.55)] active:translate-y-0"
+              className="top-nav-button-glow flex h-[clamp(34px,1.9vw,54px)] w-[clamp(76px,4.44vw,126px)] items-center justify-center rounded-[clamp(8px,0.49vw,14px)] bg-[#e8f2ff] text-[clamp(12px,0.56vw,16px)] font-medium text-[#0e4beb] transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-[#dbeafe] active:translate-y-0"
             >
               {t("nav.login")}
             </Link>

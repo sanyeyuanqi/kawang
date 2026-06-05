@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_admin
 from app.database import get_db
 from app.models.category import Category
-from app.models.code_key import CodeKey, CodeKeyStatus
+from app.models.code_key import CODE_VALUE_MAX_LENGTH, CodeKey, CodeKeyStatus
 from app.models.order import Order
 from app.models.product import Product
 from app.services.catalog_cache import STOCK_CACHE_TTL_SECONDS, cache_get_json, cache_set_json, invalidate_catalog_cache
@@ -48,6 +48,15 @@ def _error(status_code: int, code: int, msg: str) -> None:
     from app.main import AppError
 
     raise AppError(code=code, msg=msg, status_code=status_code)
+
+
+def _normalize_code_value(value: str) -> str:
+    next_value = value.strip()
+    if not next_value:
+        _error(400, 400, "卡密内容不能为空")
+    if len(next_value) > CODE_VALUE_MAX_LENGTH:
+        _error(400, 400, f"单条卡密不能超过 {CODE_VALUE_MAX_LENGTH} 个字符")
+    return next_value
 
 
 def _code_dict(code: CodeKey, contact_info: str | None = None, product_name: str | None = None) -> dict[str, Any]:
@@ -155,10 +164,7 @@ async def update_code(
     if code is None:
         _error(404, 404, "卡密不存在")
     if payload.code_value is not None:
-        next_value = payload.code_value.strip()
-        if not next_value:
-            _error(400, 400, "卡密内容不能为空")
-        code.code_value = next_value
+        code.code_value = _normalize_code_value(payload.code_value)
     if payload.status is not None:
         if code.order_id and payload.status != CodeKeyStatus.ASSIGNED:
             _error(400, 400, "已发卡卡密不能手动改为其他状态")
@@ -218,7 +224,7 @@ async def import_codes(payload: ImportCodesPayload, _: dict = Depends(get_curren
     if exists is None:
         _error(404, 404, "商品不存在")
     raw_codes = payload.codes.splitlines() if isinstance(payload.codes, str) else payload.codes
-    values = list(dict.fromkeys([c.strip() for c in raw_codes if c.strip()]))
+    values = list(dict.fromkeys([_normalize_code_value(c) for c in raw_codes if c.strip()]))
     for value in values:
         db.add(CodeKey(product_id=payload.product_id, code_value=value, status=CodeKeyStatus.UNUSED))
     await db.flush()

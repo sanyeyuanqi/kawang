@@ -28,7 +28,7 @@ export default function LoginPage() {
     defaultValues: { account: '', password: '' },
   });
 
-  const [remember, setRemember] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const onSubmit = async (data: LoginFormData) => {
