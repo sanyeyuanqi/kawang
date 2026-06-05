@@ -218,11 +218,11 @@ export default function ProductDetailPage() {
     </div>
 
     <div className="hidden pb-20 md:block">
-      <section className="mx-auto w-[min(74vw,1640px)] px-6 pt-12 md:px-0 md:pt-[clamp(46px,3.05vw,68px)]">
-        <div className="min-h-[clamp(620px,38vw,760px)] rounded-[28px] border border-[#dfe5ed] bg-white p-[clamp(38px,2.85vw,64px)] shadow-[0_24px_58px_-20px_rgba(10,18,31,0.2)]">
-          <div className="grid h-full items-stretch gap-[clamp(44px,4vw,78px)] lg:grid-cols-[minmax(520px,1.04fr)_minmax(460px,0.88fr)]">
-            <div className="flex flex-col">
-              <div className="relative flex h-[clamp(430px,27vw,560px)] items-center justify-center overflow-hidden rounded-[24px] bg-[#ebf2ff] text-[42px] font-bold tracking-wide text-[#0e4beb]">
+      <section className="mx-auto w-[min(86vw,1320px)] px-6 pt-12 md:px-0 md:pt-[clamp(46px,3.05vw,68px)]">
+        <div className="min-h-[clamp(620px,38vw,760px)] rounded-[28px] border border-[#dfe5ed] bg-white p-[clamp(28px,2.4vw,52px)] shadow-[0_24px_58px_-20px_rgba(10,18,31,0.2)]">
+          <div className="grid h-full min-w-0 items-stretch gap-[clamp(28px,3vw,56px)] xl:grid-cols-[minmax(0,1.12fr)_minmax(360px,0.88fr)]">
+            <div className="flex min-w-0 flex-col">
+              <div className="relative flex h-[clamp(360px,26vw,520px)] items-center justify-center overflow-hidden rounded-[24px] bg-[#ebf2ff] text-[42px] font-bold tracking-wide text-[#0e4beb]">
                 {showImage ? (
                   <img src={coverImage} alt={product.name} className="absolute inset-0 h-full w-full object-cover" onError={() => setImageFailed(true)} />
                 ) : (
@@ -252,20 +252,20 @@ export default function ProductDetailPage() {
               </div>
             </div>
 
-            <div className="flex min-h-full flex-col">
-              <div className="flex items-start justify-between gap-6">
-                <div>
+            <div className="flex min-h-full min-w-0 flex-col">
+              <div className="flex min-w-0 items-start justify-between gap-6">
+                <div className="min-w-0">
                   <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[#6b7990]">{st("Digital card")}</p>
-                  <h1 className="mt-3 text-[38px] font-bold leading-tight text-[#0e131e]">{product.name}</h1>
+                  <h1 className="mt-3 break-words text-[clamp(30px,2.1vw,38px)] font-bold leading-tight text-[#0e131e]">{product.name}</h1>
                 </div>
-                <p className="shrink-0 text-[38px] font-bold leading-tight text-[#ec3c30]">{formatPrice(total)}</p>
+                <p className="shrink-0 text-[clamp(30px,2.1vw,38px)] font-bold leading-tight text-[#ec3c30]">{formatPrice(total)}</p>
               </div>
 
               <p className="mt-5 max-w-[560px] text-[17px] leading-7 text-[#5c697d]">
                 {product.description || st("无需登录，填写联系方式后即可购买；付款后自动显示卡密，并可用于查询订单。")}
               </p>
 
-              <div className="mt-10 rounded-[22px] border border-[#dfe5ed] bg-[#f8fbff] p-7">
+              <div className="mt-10 min-w-0 rounded-[22px] border border-[#dfe5ed] bg-[#f8fbff] p-7">
                 <label className="block text-[15px] font-medium text-[#404a5c]">{st("联系方式（免登录购买）")}</label>
                 <input
                   value={contactInfo}
@@ -274,8 +274,8 @@ export default function ProductDetailPage() {
                   className="mt-3 h-[56px] w-full rounded-[14px] border border-[#d6e0f0] bg-white px-5 text-[15px] outline-none placeholder:text-[#9aa6ba] focus:border-[#0e4beb]"
                 />
 
-                <div className="mt-8 flex items-end justify-between gap-5">
-                  <div>
+                <div className="mt-8 flex flex-wrap items-end justify-between gap-5">
+                  <div className="min-w-[210px]">
                     <div className="flex items-center gap-3">
                       <h2 className="text-[17px] font-semibold text-[#0e131e]">{st("购买数量")}</h2>
                       <span className="text-[14px] text-[#737d8f]">{st("可多件购买")}</span>
@@ -287,7 +287,7 @@ export default function ProductDetailPage() {
                     </div>
                   </div>
 
-                  <button onClick={buy} disabled={submitting || product.available_stock <= 0} className="h-[54px] min-w-[180px] rounded-[14px] bg-[#0e4beb] px-10 text-[16px] font-semibold text-white shadow-[0_12px_28px_-12px_rgba(14,75,235,0.7)] disabled:opacity-60">
+                  <button onClick={buy} disabled={submitting || product.available_stock <= 0} className="h-[54px] min-w-[180px] flex-1 rounded-[14px] bg-[#0e4beb] px-10 text-[16px] font-semibold text-white shadow-[0_12px_28px_-12px_rgba(14,75,235,0.7)] disabled:opacity-60 sm:flex-none">
                     {submitting ? st("处理中...") : st("立即购买")}
                   </button>
                 </div>

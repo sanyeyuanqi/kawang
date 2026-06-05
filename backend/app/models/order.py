@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -13,6 +13,14 @@ class OrderStatus(str, enum.Enum):
 
 class Order(Base):
     __tablename__ = "order"
+    __table_args__ = (
+        Index("ix_order_contact_created", "contact_info", "created_at", "id"),
+        Index("ix_order_user_created", "user_id", "created_at", "id"),
+        Index("ix_order_status_created", "status", "created_at", "id"),
+        Index("ix_order_status_paid_at", "status", "paid_at"),
+        Index("ix_order_haozpay_seq_id", "haozpay_seq_id"),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     order_no: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id", ondelete="RESTRICT"), nullable=False)

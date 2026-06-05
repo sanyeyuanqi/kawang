@@ -5,17 +5,30 @@ from redis.asyncio import Redis, ConnectionPool
 from app.config import settings
 
 _pool: Optional[ConnectionPool] = None
+_client: Optional[Redis] = None
 
 
 async def get_redis() -> Redis:
-    global _pool
+    global _pool, _client
     if _pool is None:
         _pool = ConnectionPool.from_url(
             settings.REDIS_URL,
             decode_responses=True,
-            max_connections=20,
+            max_connections=settings.REDIS_MAX_CONNECTIONS,
         )
-    return Redis(connection_pool=_pool)
+    if _client is None:
+        _client = Redis(connection_pool=_pool)
+    return _client
+
+
+async def close_redis() -> None:
+    global _pool, _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+    if _pool is not None:
+        await _pool.disconnect()
+        _pool = None
 
 
 class RedisKeys:
@@ -50,6 +63,15 @@ class RedisKeys:
         category_part = "all" if category_id is None else str(category_id)
         query_part = (q or "").strip().lower() or "_"
         return f"{RedisKeys.PREFIX}:products:list:{category_part}:{offset}:{limit}:{query_part}"
+
+    @staticmethod
+    def products_by_category(category_id: int | None) -> str:
+        category_part = "all" if category_id is None else str(category_id)
+        return f"{RedisKeys.PREFIX}:products:category:{category_part}"
+
+    @staticmethod
+    def products_by_category_hash() -> str:
+        return f"{RedisKeys.PREFIX}:products:category"
 
     @staticmethod
     def shop_cache() -> str:

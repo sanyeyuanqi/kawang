@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -14,6 +14,12 @@ class CodeKeyStatus(str, enum.Enum):
 
 class CodeKey(Base):
     __tablename__ = "code_key"
+    __table_args__ = (
+        Index("ix_code_key_product_status_deleted", "product_id", "status", "is_deleted"),
+        Index("ix_code_key_order_status_deleted", "order_id", "status", "is_deleted"),
+        Index("ix_code_key_product_deleted_id", "product_id", "is_deleted", "id"),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("product.id", ondelete="CASCADE"), nullable=False)
     code_value: Mapped[str] = mapped_column(String(CODE_VALUE_MAX_LENGTH), nullable=False)

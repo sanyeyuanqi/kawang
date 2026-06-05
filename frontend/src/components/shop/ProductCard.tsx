@@ -7,9 +7,10 @@ import { useLanguage } from "@/context/LanguageContext"
 interface ProductCardProps {
   product: Product
   theme: [string, string]
+  appearDelayMs?: number
 }
 
-export default function ProductCard({ product, theme }: ProductCardProps) {
+export default function ProductCard({ product, theme, appearDelayMs = 0 }: ProductCardProps) {
   const [bg, color] = theme
   const [imageFailed, setImageFailed] = useState(false)
   const { t, st } = useLanguage()
@@ -26,7 +27,12 @@ export default function ProductCard({ product, theme }: ProductCardProps) {
   ]
 
   return (
-    <Link key={product.id} to={`/products/${product.id}`} className="product-card group grid min-h-[156px] grid-cols-[96px_1fr_72px] items-center gap-3 rounded-[20px] border border-[#dfe5ed] bg-white px-4 py-4 shadow-[0_12px_32px_-8px_rgba(10,18,31,0.08)] transition duration-200 ease-out md:block md:min-h-[clamp(292px,16.2vw,372px)] md:rounded-[clamp(14px,0.85vw,24px)] md:p-[clamp(16px,0.9vw,26px)] md:hover:-translate-y-1.5 md:hover:border-[#c8d7ea] md:hover:shadow-[0_24px_44px_-18px_rgba(10,18,31,0.28)] md:active:-translate-y-0.5">
+    <Link
+      key={product.id}
+      to={`/products/${product.id}`}
+      className="product-card product-card-appear group grid min-h-[156px] grid-cols-[96px_1fr_72px] items-center gap-3 rounded-[20px] border border-[#dfe5ed] bg-white px-4 py-4 shadow-[0_12px_32px_-8px_rgba(10,18,31,0.08)] transition duration-200 ease-out md:block md:min-h-[clamp(292px,16.2vw,372px)] md:rounded-[clamp(14px,0.85vw,24px)] md:p-[clamp(16px,0.9vw,26px)] md:hover:-translate-y-1.5 md:hover:border-[#c8d7ea] md:hover:shadow-[0_24px_44px_-18px_rgba(10,18,31,0.28)] md:active:-translate-y-0.5"
+      style={{ animationDelay: `${appearDelayMs}ms` }}
+    >
       <div className="min-w-0 md:min-w-0">
         <div
           className="flex size-[96px] items-center justify-center overflow-hidden rounded-[16px] text-[34px] font-bold transition duration-200 ease-out md:h-[clamp(118px,7.25vw,178px)] md:w-full md:rounded-[clamp(12px,0.7vw,20px)] md:text-[clamp(18px,1vw,30px)] md:group-hover:scale-[1.018]"

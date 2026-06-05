@@ -94,6 +94,50 @@ function DesktopHomeSkeleton() {
   )
 }
 
+function MobileProductSkeleton() {
+  return (
+    <div className="grid gap-5">
+      {productSkeletonItems.map((_, index) => (
+        <div key={index} className="home-skeleton-card grid min-h-[156px] grid-cols-[96px_1fr_72px] items-center gap-3 rounded-[20px] border px-4 py-4">
+          <div className="home-skeleton-media size-[96px] animate-pulse rounded-[16px]" />
+          <div className="min-w-0">
+            <div className="home-skeleton-line h-5 w-28 animate-pulse rounded-full" />
+            <div className="home-skeleton-line home-skeleton-line-soft mt-3 h-4 w-36 animate-pulse rounded-full" />
+            <div className="home-skeleton-price mt-4 h-6 w-20 animate-pulse rounded-full" />
+          </div>
+          <div className="flex h-full flex-col items-end justify-between">
+            <div className="home-skeleton-pill h-7 w-14 animate-pulse rounded-full" />
+            <div className="home-skeleton-button h-11 w-[60px] animate-pulse rounded-[12px]" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DesktopProductSkeleton() {
+  return (
+    <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3 xl:gap-[clamp(18px,1.21vw,34px)]">
+      {productSkeletonItems.map((_, index) => (
+        <div key={index} className="home-skeleton-card min-h-[clamp(292px,16.2vw,372px)] rounded-[clamp(14px,0.85vw,24px)] border p-[clamp(16px,0.9vw,26px)]">
+          <div className="home-skeleton-media h-[clamp(118px,7.25vw,178px)] w-full animate-pulse rounded-[clamp(12px,0.7vw,20px)]" />
+          <div className="mt-2 flex gap-2">
+            <div className="home-skeleton-pill h-6 w-16 animate-pulse rounded-full" />
+            <div className="home-skeleton-stock h-6 w-14 animate-pulse rounded-full" />
+            <div className="home-skeleton-button h-6 w-16 animate-pulse rounded-full" />
+          </div>
+          <div className="home-skeleton-line mt-[clamp(15px,0.99vw,28px)] h-5 w-36 animate-pulse rounded-full" />
+          <div className="home-skeleton-line home-skeleton-line-soft mt-3 h-4 w-48 max-w-full animate-pulse rounded-full" />
+          <div className="mt-[clamp(11px,0.7vw,20px)] flex items-center justify-between">
+            <div className="home-skeleton-price h-6 w-20 animate-pulse rounded-full" />
+            <div className="home-skeleton-pill h-7 w-16 animate-pulse rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function EmptyProductsState({ compact = false }: { compact?: boolean }) {
   const { t } = useLanguage()
 
@@ -115,11 +159,14 @@ export default function HomePage() {
   const [products, setProducts] = useState<Product[]>([])
   const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isCategoriesLoading, setIsCategoriesLoading] = useState(true)
+  const [isProductsLoading, setIsProductsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const desktopProductGridRef = useRef<HTMLDivElement | null>(null)
   const mobileLoadMoreRef = useRef<HTMLDivElement | null>(null)
   const desktopLoadMoreRef = useRef<HTMLDivElement | null>(null)
+  const productRequestRef = useRef(0)
+  const productAbortRef = useRef<AbortController | null>(null)
   const [desktopSidebarTop, setDesktopSidebarTop] = useState<number | null>(null)
   const primaryMobileCategoryIds = [1, 2, 3]
   const mobileCategories = [
@@ -144,6 +191,10 @@ export default function HomePage() {
         if (ignore) return
         setCategories([])
       })
+      .finally(() => {
+        if (ignore) return
+        setIsCategoriesLoading(false)
+      })
 
     return () => {
       ignore = true
@@ -151,27 +202,40 @@ export default function HomePage() {
   }, [])
 
   const loadProductsPage = useCallback(async (nextOffset: number, append = false) => {
+    const requestId = ++productRequestRef.current
+    if (!append) {
+      productAbortRef.current?.abort()
+    }
+    const controller = new AbortController()
+    productAbortRef.current = controller
     if (append) setIsLoadingMore(true)
-    else setIsLoading(true)
+    else setIsProductsLoading(true)
 
     try {
       const productPage = await getProducts({
         category_id: selectedCategory ?? undefined,
         offset: nextOffset,
         limit: PAGE_SIZE,
-      })
+      }, controller.signal)
+      if (requestId !== productRequestRef.current) return
       setProducts(current => append ? [...current, ...productPage.items] : productPage.items)
       setTotal(productPage.total)
       setOffset(nextOffset + productPage.items.length)
     } catch {
+      if (requestId !== productRequestRef.current) return
+      if (controller.signal.aborted) return
       if (!append) {
         setProducts([])
         setTotal(0)
         setOffset(0)
       }
     } finally {
+      if (requestId !== productRequestRef.current) return
+      if (productAbortRef.current === controller) {
+        productAbortRef.current = null
+      }
       if (append) setIsLoadingMore(false)
-      else setIsLoading(false)
+      else setIsProductsLoading(false)
     }
   }, [selectedCategory])
 
@@ -180,21 +244,24 @@ export default function HomePage() {
     setTotal(0)
     setOffset(0)
     loadProductsPage(0)
+    return () => {
+      productAbortRef.current?.abort()
+    }
   }, [loadProductsPage])
 
   useEffect(() => {
     const targets = [mobileLoadMoreRef.current, desktopLoadMoreRef.current].filter(Boolean) as HTMLDivElement[]
-    if (targets.length === 0 || isLoading || isLoadingMore || !hasMore) return
+    if (targets.length === 0 || isProductsLoading || isLoadingMore || !hasMore) return
 
     const observer = new IntersectionObserver((entries) => {
-      if (entries.some(entry => entry.isIntersecting) && !isLoading && !isLoadingMore && hasMore) {
+      if (entries.some(entry => entry.isIntersecting) && !isProductsLoading && !isLoadingMore && hasMore) {
         loadProductsPage(offset, true)
       }
     }, { rootMargin: "360px 0px" })
 
     targets.forEach(target => observer.observe(target))
     return () => observer.disconnect()
-  }, [hasMore, isLoading, isLoadingMore, loadProductsPage, offset])
+  }, [hasMore, isProductsLoading, isLoadingMore, loadProductsPage, offset])
 
   const getProductTheme = (product: Product) => {
     const categoryIndex = categories.findIndex(category => category.id === product.category_id || category.name === product.category_name)
@@ -207,7 +274,7 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (isLoading) return
+    if (isProductsLoading && products.length === 0) return
 
     const syncDesktopSidebarTop = () => {
       if (window.innerWidth < 1024) {
@@ -230,7 +297,7 @@ export default function HomePage() {
       window.cancelAnimationFrame(frame)
       window.removeEventListener("resize", syncDesktopSidebarTop)
     }
-  }, [products.length, isLoading])
+  }, [products.length, isProductsLoading])
 
   const isMobileMoreActive = categoryPickerOpen || selectedCategory === null || !primaryMobileCategoryIds.includes(selectedCategory)
 
@@ -239,7 +306,7 @@ export default function HomePage() {
     <MobilePhoneFrame contentClassName="px-6 pt-2 pb-32" showHomeIndicator={false}>
       <HomeHero />
 
-      {isLoading ? (
+      {isCategoriesLoading && isProductsLoading ? (
         <MobileHomeSkeleton />
       ) : (
         <>
@@ -264,9 +331,12 @@ export default function HomePage() {
           </section>
 
           <section className="mt-5">
+            {isProductsLoading ? (
+              <MobileProductSkeleton />
+            ) : (
             <div className="grid gap-5">
-              {products.map((product) => (
-                <ProductCard key={product.id} product={product} theme={getProductTheme(product)} />
+              {products.map((product, index) => (
+                <ProductCard key={product.id} product={product} theme={getProductTheme(product)} appearDelayMs={Math.min(index, 11) * 45} />
               ))}
               {products.length === 0 && (
                 <EmptyProductsState compact />
@@ -277,6 +347,7 @@ export default function HomePage() {
                 </div>
               )}
             </div>
+            )}
           </section>
         </>
       )}
@@ -395,7 +466,7 @@ export default function HomePage() {
       )}
 
       <section className="figma-web-container px-6 pt-10 md:px-0 md:pt-[clamp(28px,1.8vw,48px)]">
-        {isLoading ? (
+        {isCategoriesLoading && isProductsLoading ? (
           <DesktopHomeSkeleton />
         ) : (
         <div className="grid gap-[clamp(24px,1.8vw,40px)] lg:grid-cols-[clamp(190px,12vw,260px)_minmax(0,1fr)]">
@@ -441,10 +512,15 @@ export default function HomePage() {
           </div>
 
           <section className="min-w-0">
+            {isProductsLoading ? (
+              <div ref={desktopProductGridRef}>
+                <DesktopProductSkeleton />
+              </div>
+            ) : (
             <div ref={desktopProductGridRef} className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3 xl:gap-[clamp(18px,1.21vw,34px)]">
-              {products.map((product) => {
+              {products.map((product, index) => {
                 return (
-                  <ProductCard key={product.id} product={product} theme={getProductTheme(product)} />
+                  <ProductCard key={product.id} product={product} theme={getProductTheme(product)} appearDelayMs={Math.min(index, 11) * 45} />
                 )
               })}
               {products.length === 0 && (
@@ -458,6 +534,7 @@ export default function HomePage() {
                 </div>
               )}
             </div>
+            )}
           </section>
         </div>
         )}

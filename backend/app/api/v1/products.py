@@ -1,14 +1,166 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.services.catalog_cache import PUBLIC_CATALOG_TTL_SECONDS, cache_get_json, cache_set_json
+from app.services.catalog_cache import (
+    PUBLIC_CATALOG_TTL_SECONDS,
+    cache_get_hash_json,
+    cache_get_json,
+    cache_set_hash_many_json,
+    cache_set_json,
+)
 from app.utils.redis import RedisKeys
 from app.models.product import Product
 from app.models.code_key import CodeKey
 from app.models.category import Category
 
 router = APIRouter()
+_category_cache_build_lock = asyncio.Lock()
+
+
+def _normalize_query(q: str | None) -> str:
+    return (q or "").strip().lower()
+
+
+def _product_payload(product: Product, category_name: str | None, stock: int) -> dict:
+    return {
+        "id": product.id,
+        "category_id": product.category_id,
+        "category_name": category_name or "",
+        "name": product.name,
+        "description": product.description,
+        "cover_image": product.cover_image,
+        "price": str(product.price),
+        "sort_order": product.sort_order,
+        "sold_count": product.sold_count or 0,
+        "available_stock": stock or 0,
+        "is_on_sale": (stock or 0) > 0,
+    }
+
+
+def _product_row_payload(
+    *,
+    product_id: int,
+    category_id: int | None,
+    category_name: str | None,
+    name: str,
+    description: str | None,
+    cover_image: str | None,
+    price,
+    sort_order: int,
+    sold_count: int | None,
+    stock: int,
+) -> dict:
+    return {
+        "id": product_id,
+        "category_id": category_id,
+        "category_name": category_name or "",
+        "name": name,
+        "description": description,
+        "cover_image": cover_image,
+        "price": str(price),
+        "sort_order": sort_order,
+        "sold_count": sold_count or 0,
+        "available_stock": stock or 0,
+        "is_on_sale": (stock or 0) > 0,
+    }
+
+
+def _slice_products(items: list[dict], offset: int, limit: int) -> dict:
+    return {
+        "items": items[offset:offset + limit],
+        "total": len(items),
+        "offset": offset,
+        "limit": limit,
+    }
+
+
+def _filter_products(items: list[dict], q: str | None) -> list[dict]:
+    query = _normalize_query(q)
+    if not query:
+        return items
+    return [item for item in items if query in str(item.get("name") or "").lower()]
+
+
+async def _build_category_product_cache(db: AsyncSession) -> dict[str, list[dict]]:
+    category_rows = (
+        await db.execute(
+            select(Category.id)
+            .where(Category.is_active == True, Category.is_deleted == False)
+        )
+    ).scalars().all()
+    buckets: dict[str, list[dict]] = {"all": []}
+    for category_id in category_rows:
+        buckets.setdefault(str(category_id), [])
+
+    stock_subq = (
+        select(func.count(CodeKey.id))
+        .where(CodeKey.product_id == Product.id, CodeKey.status == "unused", CodeKey.is_deleted == False)
+        .scalar_subquery()
+    )
+    stmt = (
+        select(
+            Product.id,
+            Product.category_id,
+            Category.name.label("category_name"),
+            Product.name,
+            Product.description,
+            Product.cover_image,
+            Product.price,
+            Product.sort_order,
+            Product.sold_count,
+            stock_subq.label("available_stock"),
+        )
+        .outerjoin(Category, Product.category_id == Category.id)
+        .where(Product.is_deleted == False)
+        .order_by(Product.sort_order.desc(), Product.id.desc())
+    )
+    rows = (await db.execute(stmt)).all()
+
+    for row in rows:
+        item = _product_row_payload(
+            product_id=row.id,
+            category_id=row.category_id,
+            category_name=row.category_name,
+            name=row.name,
+            description=row.description,
+            cover_image=row.cover_image,
+            price=row.price,
+            sort_order=row.sort_order,
+            sold_count=row.sold_count,
+            stock=row.available_stock or 0,
+        )
+        buckets["all"].append(item)
+        if row.category_id is not None:
+            buckets.setdefault(str(row.category_id), []).append(item)
+
+    await cache_set_hash_many_json(RedisKeys.products_by_category_hash(), buckets, PUBLIC_CATALOG_TTL_SECONDS)
+
+    return buckets
+
+
+async def _get_cached_category_products(db: AsyncSession, category_id: int | None) -> list[dict]:
+    cache_field = "all" if category_id is None else str(category_id)
+    cached = await cache_get_hash_json(RedisKeys.products_by_category_hash(), cache_field)
+    if isinstance(cached, list):
+        return cached
+
+    async with _category_cache_build_lock:
+        cached = await cache_get_hash_json(RedisKeys.products_by_category_hash(), cache_field)
+        if isinstance(cached, list):
+            return cached
+
+        buckets = await _build_category_product_cache(db)
+        items = buckets.get(cache_field, [])
+        if cache_field not in buckets:
+            await cache_set_hash_many_json(
+                RedisKeys.products_by_category_hash(),
+                {cache_field: items},
+                PUBLIC_CATALOG_TTL_SECONDS,
+            )
+        return items
 
 
 @router.get("/products")
@@ -19,49 +171,8 @@ async def get_products(
     limit: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ):
-    cache_key = RedisKeys.products_list(category_id, q, offset, limit)
-    cached = await cache_get_json(cache_key)
-    if cached is not None:
-        return {"code": 200, "msg": "success", "data": cached}
-
-    stock_subq = (
-        select(func.count(CodeKey.id))
-        .where(CodeKey.product_id == Product.id, CodeKey.status == "unused", CodeKey.is_deleted == False)
-        .scalar_subquery()
-    )
-    stmt = (
-        select(Product, Category.name.label("category_name"), stock_subq.label("available_stock"))
-        .outerjoin(Category, Product.category_id == Category.id)
-        .where(Product.is_deleted == False)
-    )
-    if category_id is not None:
-        stmt = stmt.where(Product.category_id == category_id)
-    if q:
-        stmt = stmt.where(Product.name.like(f"%{q}%"))
-    stmt = stmt.order_by(Product.sort_order.desc()).offset(offset).limit(limit)
-
-    result = await db.execute(stmt)
-    rows = result.all()
-
-    count_stmt = select(func.count(Product.id)).where(Product.is_deleted == False)
-    if category_id is not None:
-        count_stmt = count_stmt.where(Product.category_id == category_id)
-    if q:
-        count_stmt = count_stmt.where(Product.name.like(f"%{q}%"))
-    total = (await db.execute(count_stmt)).scalar() or 0
-
-    items = []
-    for p, category_name, stock in rows:
-        items.append({
-            "id": p.id, "category_id": p.category_id, "category_name": category_name or "", "name": p.name,
-            "description": p.description, "cover_image": p.cover_image,
-            "price": str(p.price), "sort_order": p.sort_order,
-            "sold_count": p.sold_count or 0,
-            "available_stock": stock or 0, "is_on_sale": (stock or 0) > 0,
-        })
-
-    data = {"items": items, "total": total, "offset": offset, "limit": limit}
-    await cache_set_json(cache_key, data, PUBLIC_CATALOG_TTL_SECONDS)
+    cached_items = await _get_cached_category_products(db, category_id)
+    data = _slice_products(_filter_products(cached_items, q), offset, limit)
     return {"code": 200, "msg": "success", "data": data}
 
 

@@ -1,10 +1,15 @@
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 class Product(Base):
+    __table_args__ = (
+        Index("ix_product_deleted_sort", "is_deleted", "sort_order", "id"),
+        Index("ix_product_deleted_category_sort", "is_deleted", "category_id", "sort_order", "id"),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("category.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)

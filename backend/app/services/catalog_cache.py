@@ -5,7 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Iterable
 
-from app.utils.redis import RedisKeys, redis_delete, redis_delete_pattern, redis_get, redis_set
+from app.utils.redis import RedisKeys, get_redis, redis_delete, redis_delete_pattern, redis_get, redis_set
 
 PUBLIC_CATALOG_TTL_SECONDS = 300
 STOCK_CACHE_TTL_SECONDS = 120
@@ -36,6 +36,52 @@ async def cache_set_json(key: str, value: Any, ttl: int = PUBLIC_CATALOG_TTL_SEC
         pass
 
 
+async def cache_set_many_json(values: dict[str, Any], ttl: int = PUBLIC_CATALOG_TTL_SECONDS) -> None:
+    if not values:
+        return
+    try:
+        redis = await get_redis()
+        async with redis.pipeline(transaction=False) as pipe:
+            for key, value in values.items():
+                payload = json.dumps(value, ensure_ascii=False, default=_json_default)
+                if ttl:
+                    pipe.set(key, payload, ex=ttl)
+                else:
+                    pipe.set(key, payload)
+            await pipe.execute()
+    except Exception:
+        pass
+
+
+async def cache_get_hash_json(key: str, field: str) -> Any | None:
+    try:
+        redis = await get_redis()
+        raw = await redis.hget(key, field)
+        if not raw:
+            return None
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+async def cache_set_hash_many_json(key: str, values: dict[str, Any], ttl: int = PUBLIC_CATALOG_TTL_SECONDS) -> None:
+    if not values:
+        return
+    try:
+        redis = await get_redis()
+        mapping = {
+            field: json.dumps(value, ensure_ascii=False, default=_json_default)
+            for field, value in values.items()
+        }
+        async with redis.pipeline(transaction=False) as pipe:
+            pipe.hset(key, mapping=mapping)
+            if ttl:
+                pipe.expire(key, ttl)
+            await pipe.execute()
+    except Exception:
+        pass
+
+
 async def invalidate_catalog_cache(
     product_ids: Iterable[int] | None = None,
     *,
@@ -48,6 +94,8 @@ async def invalidate_catalog_cache(
             await redis_delete(RedisKeys.categories_cache())
         if clear_products:
             await redis_delete_pattern(f"{RedisKeys.PREFIX}:products:list:*")
+            await redis_delete_pattern(f"{RedisKeys.PREFIX}:products:category:*")
+            await redis_delete(RedisKeys.products_by_category_hash())
         if clear_stock:
             await redis_delete_pattern(f"{RedisKeys.PREFIX}:stock:summary:*")
 

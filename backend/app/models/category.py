@@ -1,9 +1,14 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 class Category(Base):
+    __table_args__ = (
+        Index("ix_category_active_deleted_sort", "is_active", "is_deleted", "sort_order", "id"),
+        Index("ix_category_deleted_sort", "is_deleted", "sort_order", "id"),
+    )
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(50), nullable=False)
     subtitle: Mapped[str | None] = mapped_column(String(100), nullable=True)

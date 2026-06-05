@@ -18,8 +18,8 @@ export async function getCategories() {
   return res.data.data ?? []
 }
 
-export async function getProducts(params: ProductListParams = {}) {
-  const res = await api.get<ApiResponse<PaginatedResponse<Product>>>("/products", { params })
+export async function getProducts(params: ProductListParams = {}, signal?: AbortSignal) {
+  const res = await api.get<ApiResponse<PaginatedResponse<Product>>>("/products", { params, signal })
   return res.data.data ?? { items: [], total: 0, offset: params.offset ?? 0, limit: params.limit ?? 20 }
 }
 
