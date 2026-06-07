@@ -271,18 +271,30 @@ class HaoZPayClient:
 
     async def query_order(self, gateway_order_no: str) -> PaymentStatus:
         params = {"orderNo": gateway_order_no}
-        resp_data = await self._request("POST", "/pay-core/payment/query", params)
+        resp_data = await self._request("POST", "/pay-core/payment/queryOrderDetail", params)
         data = resp_data.get("data") or {}
+        host_order = data.get("hostOrderInfo") or {}
+        pay_info = data.get("payInfo") or {}
+        trade_confirm = data.get("tradeConfirmRecord") or {}
+
+        def pick(*keys: str) -> str:
+            for source in (pay_info, host_order, trade_confirm, data):
+                for key in keys:
+                    value = source.get(key)
+                    if value not in (None, ""):
+                        return str(value)
+            return ""
+
         return PaymentStatus(
-            order_no=str(data.get("orderNo") or ""),
-            merchant_no=str(data.get("merchantNo") or ""),
-            order_amount=str(data.get("orderAmount") or ""),
-            pay_amount=str(data.get("payAmount") or ""),
-            pay_type=str(data.get("payType") or ""),
-            pay_channel=str(data.get("payChannel") or ""),
-            pay_status=str(data.get("payStatus") or ""),
-            pay_time=data.get("payTime"),
-            create_time=data.get("createTime"),
+            order_no=pick("orderNo"),
+            merchant_no=pick("merchantNo"),
+            order_amount=pick("orderAmount", "ordAmt"),
+            pay_amount=pick("payAmount", "actualPayAmount", "actualAmt", "orderAmount", "ordAmt"),
+            pay_type=pick("payType"),
+            pay_channel=pick("payChannel"),
+            pay_status=pick("payStatus"),
+            pay_time=pick("payTime", "finishTime", "transFinishTime") or None,
+            create_time=pick("createTime") or None,
         )
 
     async def create_refund(
