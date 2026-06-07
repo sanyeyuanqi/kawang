@@ -1,13 +1,14 @@
 import enum
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, func
+from sqlalchemy import Boolean, DateTime, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 class OrderStatus(str, enum.Enum):
     PENDING = "pending"
     PAID = "paid"
+    DELIVERED = "delivered"
     CANCELLED = "cancelled"
     REFUNDED = "refunded"
 
@@ -19,6 +20,8 @@ class Order(Base):
         Index("ix_order_user_created", "user_id", "created_at", "id"),
         Index("ix_order_status_created", "status", "created_at", "id"),
         Index("ix_order_status_paid_at", "status", "paid_at"),
+        Index("ix_order_status_id", "status", "id"),
+        Index("ix_order_created_id", "created_at", "id"),
         Index("ix_order_haozpay_seq_id", "haozpay_seq_id"),
     )
 
@@ -27,6 +30,7 @@ class Order(Base):
     product_id: Mapped[int] = mapped_column(Integer, nullable=False)
     product_name: Mapped[str] = mapped_column(String(100), nullable=False)
     product_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    product_type: Mapped[str] = mapped_column(String(32), nullable=False, default="auto_delivery", server_default="auto_delivery")
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -35,7 +39,10 @@ class Order(Base):
     haozpay_seq_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     pay_channel: Mapped[str | None] = mapped_column(String(32), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delivery_info: Mapped[str | None] = mapped_column(Text, nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    user_deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     refund_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     refund_seq_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

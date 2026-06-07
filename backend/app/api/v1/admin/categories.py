@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -14,6 +15,8 @@ from app.models.product import Product
 from app.services.catalog_cache import invalidate_catalog_cache
 
 router = APIRouter()
+_ADMIN_CATEGORY_CACHE_TTL_SECONDS = 60
+_admin_category_cache: dict[tuple[int, int], tuple[float, dict[str, Any]]] = {}
 
 
 class CategoryPayload(BaseModel):
@@ -49,8 +52,26 @@ def _category_dict(category: Category, product_count: int = 0) -> dict[str, Any]
     }
 
 
+def _category_row_dict(row: Any) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "name": row.name,
+        "subtitle": row.subtitle,
+        "sort_order": row.sort_order,
+        "is_active": row.is_active,
+        "product_count": int(row.product_count or 0),
+        "created_at": row.created_at.strftime("%Y-%m-%d %H:%M:%S") if row.created_at else None,
+        "updated_at": row.updated_at.strftime("%Y-%m-%d %H:%M:%S") if row.updated_at else None,
+    }
+
+
 async def _clear_public_category_cache() -> None:
+    clear_admin_category_cache()
     await invalidate_catalog_cache(clear_categories=True, clear_products=True, clear_stock=True)
+
+
+def clear_admin_category_cache() -> None:
+    _admin_category_cache.clear()
 
 
 @router.get("/categories")
@@ -60,6 +81,11 @@ async def list_categories(
     offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
 ) -> dict[str, Any]:
+    cache_key = (offset, limit)
+    cached = _admin_category_cache.get(cache_key)
+    if cached is not None and cached[0] > monotonic():
+        return cached[1]
+
     product_count_subq = (
         select(
             Product.category_id.label("category_id"),
@@ -71,9 +97,14 @@ async def list_categories(
     )
     stmt = (
         select(
-            Category,
+            Category.id,
+            Category.name,
+            Category.subtitle,
+            Category.sort_order,
+            Category.is_active,
+            Category.created_at,
+            Category.updated_at,
             func.coalesce(product_count_subq.c.product_count, 0).label("product_count"),
-            func.count().over().label("total_count"),
         )
         .outerjoin(product_count_subq, product_count_subq.c.category_id == Category.id)
         .where(Category.is_deleted == False)
@@ -82,17 +113,19 @@ async def list_categories(
         .limit(limit)
     )
     rows = (await db.execute(stmt)).all()
-    total = int(rows[0].total_count) if rows else 0
-    return {
+    total = int(await db.scalar(select(func.count(Category.id)).where(Category.is_deleted == False)) or 0)
+    response = {
         "code": 200,
         "msg": "success",
         "data": {
-            "items": [_category_dict(row[0], row.product_count or 0) for row in rows],
+            "items": [_category_row_dict(row) for row in rows],
             "total": total,
             "offset": offset,
             "limit": limit,
         },
     }
+    _admin_category_cache[cache_key] = (monotonic() + _ADMIN_CATEGORY_CACHE_TTL_SECONDS, response)
+    return response
 
 
 @router.post("/categories")

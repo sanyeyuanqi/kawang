@@ -7,6 +7,10 @@ import { useToast } from "@/components/ui/Toast"
 import { formatPrice, resolveAssetUrl } from "@/lib/utils"
 
 const PAGE_SIZE = 10
+const productTypeLabel: Record<string, string> = {
+  auto_delivery: "自动发货",
+  preorder: "提前抢购",
+}
 
 export default function AdminProductsPage() {
   const { addToast } = useToast()
@@ -112,7 +116,7 @@ export default function AdminProductsPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="admin-products-page space-y-5">
       <div className="rounded-[18px] bg-white shadow-[0_22px_60px_rgba(15,23,42,0.06)]">
         <div className="flex flex-col gap-4 border-b border-[#edf1f6] px-5 py-5 md:flex-row md:items-center md:justify-between md:px-8 md:py-7">
           <div>
@@ -135,14 +139,16 @@ export default function AdminProductsPage() {
         )}
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1200px] text-14">
+          <table className="w-full min-w-[1860px] table-fixed text-14">
             <thead className="text-[#8e99aa]">
               <tr className="border-b border-[#edf1f6]">
                 <th className="w-[64px] px-6 py-5 text-left font-medium">ID</th>
                 <th className="w-[86px] px-4 py-5 text-left font-medium">排序</th>
-                <th className="w-[230px] px-4 py-5 text-left font-medium">商品</th>
-                <th className="w-[280px] px-4 py-5 text-left font-medium">商品描述</th>
-                <th className="w-[140px] px-4 py-5 text-left font-medium">分类</th>
+                <th className="w-[320px] px-4 py-5 text-left font-medium">商品</th>
+                <th className="w-[130px] px-4 py-5 text-left font-medium">类型</th>
+                <th className="w-[320px] px-4 py-5 text-left font-medium">商品描述</th>
+                <th className="w-[360px] px-4 py-5 text-left font-medium">使用说明</th>
+                <th className="w-[210px] px-4 py-5 text-left font-medium">分类</th>
                 <th className="w-[105px] px-4 py-5 text-left font-medium">价格</th>
                 <th className="w-[76px] px-4 py-5 text-left font-medium">库存</th>
                 <th className="w-[76px] px-4 py-5 text-left font-medium">已售</th>
@@ -153,7 +159,7 @@ export default function AdminProductsPage() {
             <tbody className="divide-y divide-[#edf1f6] text-[#293344]">
               {loading && Array.from({ length: 5 }).map((_, index) => (
                 <tr key={`loading-${index}`}>
-                  <td colSpan={10} className="px-8 py-5">
+                  <td colSpan={12} className="px-8 py-5">
                     <div className="h-10 animate-pulse rounded-[12px] bg-[#f1f5fb]" />
                   </td>
                 </tr>
@@ -195,15 +201,25 @@ export default function AdminProductsPage() {
                         ) : item.name.slice(0, 1)}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-[#111827]">{item.name}</p>
-                        <p className="mt-0.5 text-12 text-[#8e99aa]">自动发货商品</p>
+                        <p className="break-words font-semibold leading-5 text-[#111827]">{item.name}</p>
+                        <p className="mt-0.5 text-12 text-[#8e99aa]">{productTypeLabel[item.product_type || "auto_delivery"] || "自动发货"}商品</p>
                       </div>
                     </div>
                   </td>
-                  <td className="px-4 py-5 text-[#5d6675]">
-                    <p className="max-w-[260px] truncate">{item.description || "暂无描述"}</p>
+                  <td className="px-4 py-5">
+                    <span className={`inline-flex h-8 items-center rounded-full px-3 text-13 font-medium ${item.product_type === "preorder" ? "bg-warning-50 text-warning-600" : "bg-primary-50 text-primary-600"}`}>
+                      {productTypeLabel[item.product_type || "auto_delivery"] || "自动发货"}
+                    </span>
                   </td>
-                  <td className="px-4 py-5 text-[#5d6675]">{item.category_name || "未分类"}</td>
+                  <td className="px-4 py-5 text-[#5d6675]">
+                    <p className="whitespace-normal break-words leading-6">{item.description || "暂无描述"}</p>
+                  </td>
+                  <td className="px-4 py-5 text-[#5d6675]">
+                    <p className="whitespace-normal break-all leading-6">{item.usage_instructions || "暂无说明"}</p>
+                  </td>
+                  <td className="px-4 py-5 text-[#5d6675]">
+                    <p className="whitespace-normal break-words leading-6">{item.category_name || "未分类"}</p>
+                  </td>
                   <td className="px-4 py-5 font-semibold text-danger-500">{formatPrice(item.price)}</td>
                   <td className="px-4 py-5 text-[#5d6675]">{item.stock ?? item.available_stock}</td>
                   <td className="px-4 py-5 text-[#5d6675]">{item.sold_count ?? 0}</td>
@@ -227,7 +243,7 @@ export default function AdminProductsPage() {
 
               {!loading && items.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-8 py-16 text-center text-[#8e99aa]">暂无商品数据</td>
+                  <td colSpan={12} className="px-8 py-16 text-center text-[#8e99aa]">暂无商品数据</td>
                 </tr>
               )}
             </tbody>

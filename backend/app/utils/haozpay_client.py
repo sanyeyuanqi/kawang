@@ -207,7 +207,11 @@ class HaoZPayClient:
 
                 resp_data = resp.json()
                 if resp_data.get("code") != 0:
-                    raise PaymentException(resp_data.get("msg") or "haozpay order failed")
+                    message = resp_data.get("msg") or resp_data.get("message") or resp_data.get("error") or "haozpay order failed"
+                    request_id = resp_data.get("request_id") or resp_data.get("requestId")
+                    if request_id:
+                        message = f"{message} (request_id: {request_id})"
+                    raise PaymentException(message)
 
                 if self.debug:
                     logger.debug(f"[haozpay] Response: {resp_data}")
@@ -245,12 +249,12 @@ class HaoZPayClient:
         resp_data = await self._request("POST", "/pay-core/payment/order", params)
         data = resp_data.get("data") or {}
         pay_info = data.get("payInfo")
-        merchant_order_no = data.get("merchantOrderNo")
+        gateway_order_no = data.get("seqId") or data.get("merchantOrderNo") or out_trade_no
         return PayInfo(
             pay_type=pay_type,
             qr_url=pay_info,
             qr_content=pay_info,
-            haozpay_seq_id=merchant_order_no,
+            haozpay_seq_id=gateway_order_no,
         )
 
     async def verify_callback(self, params: dict) -> bool:
@@ -287,15 +291,16 @@ class HaoZPayClient:
         amount = (Decimal(refund_amount) / Decimal("100")).quantize(Decimal("0.01"))
         params = {
             "orderNo": order_no,
-            "refundAmount": str(amount),
+            "refundAmount": float(amount),
             "notifyUrl": f"{settings.SITE_URL}/api/v1/orders/refund-callback",
         }
         if refund_reason:
             params["refundReason"] = refund_reason
         resp_data = await self._request("POST", "/pay-core/payment/refund", params)
+        data = resp_data.get("data") or {}
         return RefundResult(
-            refund_seq_id=order_no,
-            refund_amount=str(amount),
+            refund_seq_id=str(data.get("seqId") or data.get("refundSeqId") or data.get("orderNo") or order_no),
+            refund_amount=str(data.get("refundAmount") or amount),
         )
 
     async def cancel_order(self, order_no: str) -> bool:

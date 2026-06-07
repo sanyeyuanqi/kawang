@@ -1,8 +1,10 @@
 import { Link, useNavigate } from "react-router-dom"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { QRCodeSVG } from "qrcode.react"
 import api from "@/api/client"
 import { useAuth } from "@/hooks/useAuth"
 import { useLanguage } from "@/context/LanguageContext"
+import { useOrderPaymentMonitor } from "@/hooks/useOrderPaymentMonitor"
 import { formatPrice } from "@/lib/utils"
 
 interface OrderRecord {
@@ -11,11 +13,20 @@ interface OrderRecord {
   status: string
   total_amount: string
   product_name: string
+  product_type?: string
   quantity: number
   contact_info: string
   codes?: { id: number; code_value: string }[]
   paid_at: string | null
   created_at: string | null
+}
+
+interface PayInfo {
+  pay_type: number
+  html_form?: string | null
+  qr_url?: string | null
+  qr_content?: string | null
+  haozpay_seq_id?: string | null
 }
 
 type ProfileSection = "profile" | "orders"
@@ -60,11 +71,12 @@ function formatDate(value?: string | null) {
   return date.toLocaleString()
 }
 
-function getStatusMeta(status: string, st: (text: string) => string) {
+function getStatusMeta(status: string, st: (text: string) => string, productType?: string) {
   const normalized = status?.toLowerCase()
+  if (normalized === "paid" && productType === "preorder") return { label: st("待发货"), className: "bg-[#fff6df] text-[#f09e1f] border-[#ffe5ad]" }
   if (normalized === "paid" || status === "已支付") return { label: st("已支付"), className: "bg-[#e8faf4] text-[#08a678] border-[#c9f0e3]" }
   if (normalized === "pending" || status === "待支付") return { label: st("待支付"), className: "bg-[#fff6df] text-[#f09e1f] border-[#ffe5ad]" }
-  if (normalized === "delivered" || status === "已发卡") return { label: st("已发卡"), className: "bg-[#e8faf4] text-[#08a678] border-[#c9f0e3]" }
+  if (normalized === "delivered" || status === "已发卡") return { label: st(productType === "preorder" ? "已发货" : "已发卡"), className: "bg-[#e8faf4] text-[#08a678] border-[#c9f0e3]" }
   if (normalized === "cancelled" || normalized === "canceled" || status === "已取消") return { label: st("已取消"), className: "bg-[#f2f5f9] text-[#6b7990] border-[#dfe5ed]" }
   if (normalized === "refunded" || status === "已退款") return { label: st("已退款"), className: "bg-[#f2f5f9] text-[#6b7990] border-[#dfe5ed]" }
   if (normalized === "after_sale" || normalized === "after-sales" || status === "售后中") return { label: st("售后中"), className: "bg-[#ebf2ff] text-[#0e4beb] border-[#cbdcff]" }
@@ -74,6 +86,98 @@ function getStatusMeta(status: string, st: (text: string) => string) {
 function canViewOrderDetail(status: string) {
   const normalized = status?.toLowerCase()
   return normalized === "paid" || normalized === "delivered" || status === "已支付" || status === "已发卡"
+}
+
+function isPendingOrder(status: string) {
+  const normalized = status?.toLowerCase()
+  return normalized === "pending" || status === "待支付"
+}
+
+function getErrorMessage(err: any, fallback: string) {
+  const detail = err.response?.data?.detail
+  if (typeof detail === "string") return detail
+  return detail?.msg || err.response?.data?.msg || fallback
+}
+
+function PayDialog({
+  order,
+  payInfo,
+  cashierUrl,
+  loading,
+  error,
+  status,
+  st,
+  onClose,
+}: {
+  order: OrderRecord
+  payInfo: PayInfo | null
+  cashierUrl?: string | null
+  loading: boolean
+  error: string
+  status: "idle" | "ready" | "polling" | "paid" | "timeout"
+  st: (text: string) => string
+  onClose: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1220]/65 px-5 py-8 backdrop-blur-sm">
+      <div className="relative w-full max-w-[430px] rounded-[24px] bg-[#101827] p-6 text-white shadow-[0_28px_70px_-24px_rgba(10,18,31,0.55)]">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full bg-[#172235] text-[20px] leading-none text-[#7f8fa8] hover:bg-[#1f2d44] hover:text-white"
+          aria-label={st("关闭支付弹层")}
+        >
+          ×
+        </button>
+
+        <div className="pr-8">
+          <h2 className="text-[22px] font-bold text-white">{st("扫码完成支付")}</h2>
+          <p className="mt-2 text-[14px] text-[#b8c6da]">{st("请使用收银台二维码完成付款")}</p>
+        </div>
+
+        <div className="mx-auto mt-6 flex size-[244px] items-center justify-center rounded-[18px] border border-white/75 bg-white p-4 shadow-[0_12px_30px_-20px_rgba(10,18,31,0.35)]">
+          {cashierUrl ? (
+            <QRCodeSVG value={cashierUrl} size={210} />
+          ) : status === "paid" ? (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-4 rounded-[12px] bg-[#f3f6fb] text-[#08a678]">
+              <span className="grid h-14 w-14 place-items-center rounded-full border-4 border-[#c9f0e3] text-[34px] leading-none">✓</span>
+              <span className="text-[14px] font-semibold">{st("支付成功")}</span>
+            </div>
+          ) : loading ? (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-4 rounded-[12px] bg-[#f3f6fb] text-[#64748b]">
+              <span className="h-10 w-10 animate-spin rounded-full border-4 border-[#d8e1ec] border-t-[#0e4beb]" />
+              <span className="text-[14px] font-semibold">{st("正在生成二维码...")}</span>
+            </div>
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-4 rounded-[12px] bg-[#f3f6fb] px-5 text-center text-[#64748b]">
+              <span className="text-[14px] font-semibold">{error || st("支付信息加载失败，请稍后重试")}</span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 rounded-[14px] bg-[#f7f9fc] px-4 py-3">
+          <p className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap text-[#64748b]">
+            <span className="shrink-0 text-[13px]">{st("订单号：")}</span>
+            <span className="shrink-0 text-[13px] font-semibold text-[#475569]" title={order.order_no}>{order.order_no}</span>
+          </p>
+          <p className="mt-1 text-[13px] text-[#64748b]">{st("金额：")}{formatPrice(order.total_amount)}</p>
+        </div>
+
+        {payInfo?.html_form && <div id={`profile-alipay-form-${order.order_no}`} className="hidden" />}
+
+        {cashierUrl && (
+          <a href={cashierUrl} target="_blank" rel="noreferrer" className="mt-5 flex h-11 w-full items-center justify-center rounded-[12px] bg-black text-[15px] font-semibold text-white">
+            {st("打开收银台")}
+          </a>
+        )}
+
+        {loading && <p className="mt-4 text-center text-[13px] text-[#cbd5e1]">{st("正在生成二维码...")}</p>}
+        {(status === "ready" || status === "polling") && <p className="mt-4 text-center text-[13px] text-[#cbd5e1]">{st("等待支付确认中...")}</p>}
+        {status === "paid" && <p className="mt-4 text-center text-[14px] font-semibold text-[#08a678]">{st("支付成功！正在跳转...")}</p>}
+        {status === "timeout" && <p className="mt-4 text-center text-[13px] text-[#f09e1f]">{error || st("支付确认超时，可在订单查询页查看最新状态")}</p>}
+      </div>
+    </div>
+  )
 }
 
 function parseOrdersPayload(data: any) {
@@ -115,13 +219,22 @@ export default function ProfilePage() {
   const [ordersLoadingMore, setOrdersLoadingMore] = useState(false)
   const [ordersError, setOrdersError] = useState("")
   const [ordersLoaded, setOrdersLoaded] = useState(false)
+  const [cancellingOrderNo, setCancellingOrderNo] = useState<string | null>(null)
+  const [deletingOrderNo, setDeletingOrderNo] = useState<string | null>(null)
+  const [activePayOrderNo, setActivePayOrderNo] = useState<string | null>(null)
+  const [payInfo, setPayInfo] = useState<PayInfo | null>(null)
+  const [payLoading, setPayLoading] = useState(false)
+  const [payError, setPayError] = useState("")
+  const [payStatus, setPayStatus] = useState<"idle" | "ready" | "polling" | "paid" | "timeout">("idle")
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
   const ordersRef = useRef<OrderRecord[]>([])
   const ordersRequestingRef = useRef(false)
   const requestedCursorsRef = useRef<Set<string>>(new Set())
   const lastScrollYRef = useRef(0)
+  const paidHandledRef = useRef(false)
   const showProfile = activeSection === "profile"
   const showOrders = activeSection === "orders"
+  const cashierUrl = payInfo?.qr_content || payInfo?.qr_url
 
   const handleLogout = async () => {
     await logout()
@@ -138,6 +251,13 @@ export default function ProfilePage() {
     setOrdersLoaded(false)
     setOrdersLoading(false)
     setOrdersLoadingMore(false)
+    setCancellingOrderNo(null)
+    setDeletingOrderNo(null)
+    setActivePayOrderNo(null)
+    setPayInfo(null)
+    setPayLoading(false)
+    setPayError("")
+    setPayStatus("idle")
     ordersRequestingRef.current = false
     requestedCursorsRef.current.clear()
     lastScrollYRef.current = window.scrollY
@@ -201,11 +321,125 @@ export default function ProfilePage() {
     return () => observer.disconnect()
   }, [hasMoreOrders, loadOrdersPage, ordersCursor, ordersCursorCreatedAt, ordersLoading, ordersLoadingMore, showOrders])
 
+  const closePayDialog = () => {
+    setActivePayOrderNo(null)
+    setPayInfo(null)
+    setPayError("")
+    setPayStatus("idle")
+    setPayLoading(false)
+  }
+
+  const openPayPanel = async (order: OrderRecord) => {
+    if (activePayOrderNo === order.order_no && payInfo) return
+    paidHandledRef.current = false
+    setActivePayOrderNo(order.order_no)
+    setPayInfo(null)
+    setPayError("")
+    setPayStatus("idle")
+    setPayLoading(true)
+
+    try {
+      const cached = sessionStorage.getItem(`pay_info_${order.order_no}`)
+      if (cached) {
+        const parsed = JSON.parse(cached) as PayInfo
+        setPayInfo(parsed)
+        setPayStatus("ready")
+        return
+      }
+
+      const response = await api.get<{ code: number; msg: string; data: PayInfo }>(`/orders/${order.order_no}/pay-info`)
+      const info = response.data.data
+      sessionStorage.setItem(`pay_info_${order.order_no}`, JSON.stringify(info))
+      setPayInfo(info)
+      setPayStatus("ready")
+    } catch (err: any) {
+      setPayError(getErrorMessage(err, st("支付信息加载失败，请稍后重试")))
+      setPayStatus("idle")
+    } finally {
+      setPayLoading(false)
+    }
+  }
+
+  const cancelOrder = async (order: OrderRecord) => {
+    if (cancellingOrderNo) return
+    const confirmed = window.confirm(st("确定要取消这个订单吗？"))
+    if (!confirmed) return
+
+    setOrdersError("")
+    setCancellingOrderNo(order.order_no)
+    try {
+      const response = await api.post<{ code: number; msg: string; data: OrderRecord }>(`/orders/${order.order_no}/cancel`, {
+        contact_info: order.contact_info,
+      })
+      const cancelledOrder = response.data.data
+      const nextOrders = ordersRef.current.map(item => item.order_no === order.order_no ? { ...item, ...cancelledOrder } : item)
+      ordersRef.current = nextOrders
+      setOrders(nextOrders)
+      sessionStorage.removeItem(`pay_info_${order.order_no}`)
+    } catch (err: any) {
+      setOrdersError(getErrorMessage(err, st("取消订单失败，请稍后重试")))
+    } finally {
+      setCancellingOrderNo(null)
+    }
+  }
+
+  const deleteOrder = async (order: OrderRecord) => {
+    if (deletingOrderNo) return
+    const confirmed = window.confirm(st("确定要删除这个订单吗？"))
+    if (!confirmed) return
+
+    setOrdersError("")
+    setDeletingOrderNo(order.order_no)
+    try {
+      await api.delete(`/orders/${order.order_no}`)
+      const nextOrders = ordersRef.current.filter(item => item.order_no !== order.order_no)
+      ordersRef.current = nextOrders
+      setOrders(nextOrders)
+      sessionStorage.removeItem(`pay_info_${order.order_no}`)
+      if (activePayOrderNo === order.order_no) closePayDialog()
+    } catch (err: any) {
+      setOrdersError(getErrorMessage(err, st("删除订单失败，请稍后重试")))
+    } finally {
+      setDeletingOrderNo(null)
+    }
+  }
+
+  useEffect(() => {
+    if (payStatus === "ready" && payInfo?.pay_type === 0 && payInfo.html_form) {
+      const container = document.getElementById(`profile-alipay-form-${activePayOrderNo}`)
+      if (!container) return
+      container.innerHTML = payInfo.html_form
+      const form = container.querySelector("form")
+      if (form) setTimeout(() => form.submit(), 200)
+    }
+  }, [activePayOrderNo, payInfo, payStatus])
+
+  useOrderPaymentMonitor({
+    orderNo: activePayOrderNo || undefined,
+    enabled: Boolean(activePayOrderNo) && (payStatus === "ready" || payStatus === "polling"),
+    onPaid: () => {
+      if (!activePayOrderNo || paidHandledRef.current) return
+      paidHandledRef.current = true
+      setPayStatus("paid")
+      const markPaid = (order: OrderRecord) => order.order_no === activePayOrderNo ? { ...order, status: "paid", paid_at: order.paid_at || order.created_at } : order
+      ordersRef.current = ordersRef.current.map(markPaid)
+      setOrders(prev => prev.map(markPaid))
+      setTimeout(() => navigate(`/orders/${activePayOrderNo}/success`), 900)
+    },
+    onCancelled: () => {
+      setPayStatus("timeout")
+      setPayError(st("订单已取消，如已付款请联系客服处理"))
+    },
+    onTimeout: () => setPayStatus("timeout"),
+    onError: () => setPayStatus((current) => current === "ready" ? "polling" : current),
+  })
+
   if (!user) return null
 
   const roleLabel = user.role === "admin" ? t("profile.roleAdmin") : t("profile.roleBuyer")
   const displayName = user.username || user.email || "-"
   const loadedOrderCount = orders.length
+  const activePayOrder = activePayOrderNo ? orders.find(order => order.order_no === activePayOrderNo) || null : null
 
   return (
     <div className="profile-shell figma-web-container px-5 pb-24 pt-8 md:px-0 md:pt-[clamp(28px,1.9vw,48px)]">
@@ -315,18 +549,21 @@ export default function ProfilePage() {
 
             <div className="mt-6 space-y-4">
               {orders.map(order => {
-                const statusMeta = getStatusMeta(order.status, st)
+                const statusMeta = getStatusMeta(order.status, st, order.product_type)
                 const showDetail = canViewOrderDetail(order.status)
+                const showCancel = isPendingOrder(order.status)
+                const showPay = isPendingOrder(order.status)
                 return (
                   <article key={order.order_no} className="profile-order-card rounded-[18px] border border-[#dbe5f5] bg-white p-5">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="break-all text-[15px] font-bold text-[#111827]">{st("订单号：")}{order.order_no}</p>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="shrink-0 text-[15px] font-bold text-[#111827]">{st("订单号：")}</span>
+                          <p className="profile-order-no min-w-0 truncate text-[15px] font-bold text-[#111827]" title={order.order_no}>{order.order_no}</p>
                         </div>
-                        <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                          <span className="text-[13px] font-medium text-[#5c697d]">{order.paid_at || order.created_at || "-"}</span>
-                          <p className="text-[14px] font-semibold text-[#404a5c]">{order.product_name}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <span className="profile-order-time text-[13px] font-medium text-[#5c697d]">{order.paid_at || order.created_at || "-"}</span>
+                          <p className="profile-order-product text-[14px] font-semibold text-[#404a5c]">{order.product_name}</p>
                           <span className="profile-order-quantity inline-flex rounded-full border border-[#d1def0] bg-[#f6f9fe] px-3 py-1 text-[12px] font-semibold leading-none text-[#4f5c70]">x{order.quantity}</span>
                         </div>
                       </div>
@@ -342,14 +579,43 @@ export default function ProfilePage() {
                         {!showDetail && <p className="text-[15px]">{st("订单暂未发卡")}</p>}
                         <span className="text-[22px] font-bold leading-none text-[#e82929]">{formatPrice(order.total_amount)}</span>
                       </div>
-                      {showDetail && (
-                        <Link
-                          to={`/orders/${order.order_no}/success`}
-                          className="inline-flex h-10 shrink-0 items-center justify-center rounded-[11px] bg-[#2663eb] px-5 text-[14px] font-semibold text-white shadow-[0_10px_22px_-14px_rgba(14,75,235,0.58)] transition hover:-translate-y-0.5 hover:bg-[#0e4beb]"
+                      <div className="flex shrink-0 flex-wrap justify-end gap-2">
+                        {showPay && (
+                          <button
+                            type="button"
+                            onClick={() => openPayPanel(order)}
+                            className="inline-flex h-10 shrink-0 items-center justify-center rounded-[11px] bg-[#2663eb] px-5 text-[14px] font-semibold text-white shadow-[0_10px_22px_-14px_rgba(14,75,235,0.58)] transition hover:-translate-y-0.5 hover:bg-[#0e4beb]"
+                          >
+                            {st("去支付")}
+                          </button>
+                        )}
+                        {showCancel && (
+                          <button
+                            type="button"
+                            onClick={() => cancelOrder(order)}
+                            disabled={cancellingOrderNo === order.order_no}
+                            className="inline-flex h-10 shrink-0 items-center justify-center rounded-[11px] bg-transparent px-5 text-[14px] font-semibold text-[#c8d4e6] transition hover:bg-white/5 hover:text-white disabled:opacity-60"
+                          >
+                            {cancellingOrderNo === order.order_no ? st("取消中...") : st("取消订单")}
+                          </button>
+                        )}
+                        {showDetail && (
+                          <Link
+                            to={`/orders/${order.order_no}/success`}
+                            className="inline-flex h-10 shrink-0 items-center justify-center rounded-[11px] bg-[#2663eb] px-5 text-[14px] font-semibold text-white shadow-[0_10px_22px_-14px_rgba(14,75,235,0.58)] transition hover:-translate-y-0.5 hover:bg-[#0e4beb]"
+                          >
+                            {st("查看详情")}
+                          </Link>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => deleteOrder(order)}
+                          disabled={deletingOrderNo === order.order_no}
+                          className="inline-flex h-10 shrink-0 items-center justify-center rounded-[11px] bg-transparent px-5 text-[14px] font-semibold text-[#ef3333] transition hover:bg-[#fff1f1] disabled:opacity-60"
                         >
-                          {st("查看详情")}
-                        </Link>
-                      )}
+                          {deletingOrderNo === order.order_no ? st("删除中...") : st("删除订单")}
+                        </button>
+                      </div>
                     </div>
                   </article>
                 )
@@ -365,6 +631,18 @@ export default function ProfilePage() {
 
         </div>
       </section>
+      {activePayOrder && (
+        <PayDialog
+          order={activePayOrder}
+          payInfo={payInfo}
+          cashierUrl={cashierUrl}
+          loading={payLoading}
+          error={payError}
+          status={payStatus}
+          st={st}
+          onClose={closePayDialog}
+        />
+      )}
     </div>
   )
 }

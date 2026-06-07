@@ -15,7 +15,7 @@ export default function CategoryIcon({ category, theme, active = false, onClick 
       type="button"
       onClick={onClick}
       className={
-        "group flex h-[78px] flex-col items-center justify-center rounded-[18px] border p-0 text-left transition duration-200 ease-out md:h-[clamp(72px,4.51vw,128px)] md:items-start md:rounded-[clamp(14px,0.85vw,24px)] md:p-[clamp(14px,0.91vw,26px)] md:hover:-translate-y-1 md:hover:shadow-[0_18px_34px_-18px_rgba(10,18,31,0.38)] md:active:translate-y-0 " +
+        "mobile-category-icon group flex h-[78px] flex-col items-center justify-center rounded-[18px] border p-0 text-left transition duration-200 ease-out md:h-[clamp(72px,4.51vw,128px)] md:items-start md:rounded-[clamp(14px,0.85vw,24px)] md:p-[clamp(14px,0.91vw,26px)] md:hover:-translate-y-1 md:hover:shadow-[0_18px_34px_-18px_rgba(10,18,31,0.38)] md:active:translate-y-0 " +
         (active ? "border-[#0e4beb] ring-2 ring-[#0e4beb]/15" : "border-[#dfe5ed] md:border-transparent md:hover:border-[#b8c9e2]")
       }
       style={{ backgroundColor: bg }}

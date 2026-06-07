@@ -467,19 +467,19 @@ export default function HomePage() {
           className="mobile-fade-in absolute inset-0 bg-[#0e131e]/35"
           onClick={() => setCategoryPickerOpen(false)}
         />
-        <div className="mobile-sheet-in absolute bottom-0 left-0 right-0 rounded-t-[28px] border border-[#d6e2f0] bg-white px-6 pb-8 pt-4 shadow-[0_-22px_46px_-24px_rgba(10,18,31,0.35)]">
-          <div className="mx-auto mb-4 h-1 w-12 rounded-full bg-[#d4deeb]" />
+        <div className="mobile-category-sheet mobile-sheet-in absolute bottom-0 left-0 right-0 rounded-t-[28px] border border-[#d6e2f0] bg-white px-6 pb-8 pt-4 shadow-[0_-22px_46px_-24px_rgba(10,18,31,0.35)]">
+          <div className="mobile-category-sheet-handle mx-auto mb-4 h-1 w-12 rounded-full bg-[#d4deeb]" />
           <div className="flex items-center justify-between">
             <h3 className="text-[20px] font-bold leading-none text-[#0e131e]">{t("home.chooseCategory")}</h3>
-            <button type="button" className="rounded-full bg-[#eef5ff] px-4 py-2 text-[13px] font-semibold text-[#0e4beb]" onClick={() => selectCategory(null)}>
+            <button type="button" className="mobile-category-sheet-all rounded-full bg-[#eef5ff] px-4 py-2 text-[13px] font-semibold text-[#0e4beb]" onClick={() => selectCategory(null)}>
               {t("home.allProducts")}
             </button>
           </div>
-          <div className="mt-4 max-h-[250px] snap-y snap-mandatory overflow-y-auto overscroll-contain pr-1">
+          <div className="mobile-category-sheet-scroll mt-4 max-h-[250px] snap-y snap-mandatory overflow-y-auto overscroll-contain pr-1">
             <button
               type="button"
               onClick={() => selectCategory(null)}
-              className={"mb-3 flex h-[54px] w-full snap-center items-center justify-between rounded-[16px] border px-4 text-left transition " + (selectedCategory === null ? "border-[#0e4beb] bg-[#eef5ff] text-[#0e4beb]" : "border-[#dfe5ed] bg-[#f8fbff] text-[#0e131e]")}
+              className={"mobile-category-sheet-item mb-3 flex h-[54px] w-full snap-center items-center justify-between rounded-[16px] border px-4 text-left transition " + (selectedCategory === null ? "mobile-category-sheet-item-active border-[#0e4beb] bg-[#eef5ff] text-[#0e4beb]" : "border-[#dfe5ed] bg-[#f8fbff] text-[#0e131e]")}
             >
               <span className="text-[16px] font-bold">{t("home.allProducts")}</span>
               <span className="text-[13px] font-medium text-[#6b7990]">{t("home.showAllCategories")}</span>
@@ -489,13 +489,13 @@ export default function HomePage() {
                 key={category.id}
                 type="button"
                 onClick={() => selectCategory(category.id)}
-                className={"mb-3 flex h-[58px] w-full snap-center items-center justify-between rounded-[16px] border px-4 text-left transition " + (selectedCategory === category.id ? "border-[#0e4beb] bg-[#eef5ff]" : "border-[#dfe5ed] bg-white")}
+                className={"mobile-category-sheet-item mb-3 flex h-[58px] w-full snap-center items-center justify-between rounded-[16px] border px-4 text-left transition " + (selectedCategory === category.id ? "mobile-category-sheet-item-active border-[#0e4beb] bg-[#eef5ff]" : "border-[#dfe5ed] bg-white")}
               >
                 <span>
                   <span className="block text-[17px] font-bold leading-[20px]" style={{ color: categoryThemes[index % categoryThemes.length][1] }}>{category.name}</span>
                   <span className="mt-1 block text-[12px] font-medium text-[#6b7990]">{category.subtitle}</span>
                 </span>
-                <span className={"h-2.5 w-2.5 rounded-full " + (selectedCategory === category.id ? "bg-[#0e4beb]" : "bg-[#d9e3f0]")} />
+                <span className={"mobile-category-dot h-2.5 w-2.5 rounded-full " + (selectedCategory === category.id ? "bg-[#0e4beb]" : "bg-[#d9e3f0]")} />
               </button>
             ))}
           </div>

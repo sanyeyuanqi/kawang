@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Index, Integer, String, Text, desc, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -11,6 +11,8 @@ class Announcement(Base):
         Index("ix_announcement_public_list", "is_published", "is_deleted", "sort_order", "id"),
         Index("ix_announcement_pinned_public", "is_pinned", "is_published", "is_deleted", "updated_at"),
         Index("ix_announcement_admin_list", "is_deleted", "updated_at", "id"),
+        Index("ix_announcement_admin_sort", "is_deleted", "sort_order", desc("id")),
+        Index("ix_announcement_admin_status_sort", "is_deleted", "is_published", "sort_order", desc("id")),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

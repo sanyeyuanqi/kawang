@@ -10,15 +10,32 @@ interface OrderResult {
   status: string
   total_amount: string
   product_name: string
+  product_type?: string
   quantity: number
+  usage_instructions?: string | null
   codes: { id: number; code_value: string }[]
   paid_at: string | null
+  delivered_at?: string | null
+  delivery_info?: string | null
 }
 
 interface ApiResponse<T> {
   code: number
   msg: string
   data: T
+}
+
+function getInstructionHref(value: string) {
+  const text = value.trim()
+  if (!text) return null
+  try {
+    const url = new URL(text)
+    if (url.protocol === "http:" || url.protocol === "https:") return url.href
+  } catch {
+    // Fall through to the bare-domain check below.
+  }
+  if (/^([\w-]+\.)+[\w-]{2,}(\/[^\s]*)?$/i.test(text)) return `https://${text}`
+  return null
 }
 
 export default function SuccessPage() {
@@ -29,6 +46,8 @@ export default function SuccessPage() {
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const usageInstructions = order?.usage_instructions?.trim()
+  const usageInstructionsHref = usageInstructions ? getInstructionHref(usageInstructions) : null
 
   useEffect(() => {
     if (!orderNo) return
@@ -80,7 +99,7 @@ export default function SuccessPage() {
     )
   }
 
-  if (!order || order.status !== "paid") {
+  if (!order || (order.status !== "paid" && order.status !== "delivered")) {
     return (
       <OrderUnavailableState
         orderNo={orderNo}
@@ -90,6 +109,9 @@ export default function SuccessPage() {
       />
     )
   }
+  const isPreorder = order.product_type === "preorder"
+  const isDelivered = order.status === "delivered"
+  const deliveryInfo = order.delivery_info?.trim()
 
   return (
     <>
@@ -110,18 +132,26 @@ export default function SuccessPage() {
             </svg>
           </div>
           <h1 className="text-[32px] font-bold leading-none">{st("支付成功")}</h1>
-          <p className="mt-[14px] text-[17px] leading-none text-[#dbe6ff]">{st("订单已自动发卡，请及时保存卡密")}</p>
+          <p className="mt-[14px] text-[17px] leading-none text-[#dbe6ff]">{isPreorder ? st(isDelivered ? "订单已发货" : "订单待发货，请留意通知") : st("订单已自动发卡，请及时保存卡密")}</p>
         </section>
 
         <main className="relative z-10 -mt-[53px] px-[30px]">
           <section className="success-mobile-card rounded-[22px] border border-[#dfe5ed] bg-white px-[27px] pb-[67px] pt-[39px] shadow-[0_18px_42px_-20px_rgba(10,18,31,0.22)]">
             <div className="mb-[28px] flex items-center justify-between gap-4">
-              <h2 className="success-mobile-title text-[24px] font-bold leading-none text-[#0e131e]">{st("你的卡密")}</h2>
-              <span className="success-mobile-status shrink-0 rounded-full bg-[#e8faf4] px-[18px] py-[9px] text-[14px] font-medium leading-none text-success-500">{st("已发卡")}</span>
+              <h2 className="success-mobile-title text-[24px] font-bold leading-none text-[#0e131e]">{isPreorder ? st("订单信息") : st("你的卡密")}</h2>
+              <span className="success-mobile-status shrink-0 rounded-full bg-[#e8faf4] px-[18px] py-[9px] text-[14px] font-medium leading-none text-success-500">{isPreorder ? st(isDelivered ? "已发货" : "待发货") : st("已发卡")}</span>
             </div>
 
             <div className="success-mobile-code-panel rounded-[14px] border border-[#d8e1ec] bg-[#f8fafc] px-4 py-[35px]">
-              {order.codes.length > 0 ? (
+              {isPreorder ? (
+                <div className="text-center text-[15px] leading-7 text-[#5c697d]">
+                  {deliveryInfo ? (
+                    <p className="whitespace-pre-wrap break-words rounded-[12px] bg-white px-4 py-3 text-left font-mono text-[13px] leading-6 text-[#0e131e]">{deliveryInfo}</p>
+                  ) : (
+                    <p>{st("等待发货中.......")}</p>
+                  )}
+                </div>
+              ) : order.codes.length > 0 ? (
                 <div className="space-y-4">
                   {order.codes.map((code) => (
                     <div key={code.id} className="success-mobile-code-row grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-[#d8e1ec] bg-white px-4 py-3">
@@ -154,13 +184,31 @@ export default function SuccessPage() {
             </button>
           </section>
 
-          <section className="success-mobile-instructions mt-[45px]">
-            <h3 className="success-mobile-instructions-title mb-[19px] text-[22px] font-bold leading-none text-[#0e131e]">{st("使用说明")}</h3>
-            <ol className="success-mobile-instructions-list space-y-[22px] rounded-[20px] border border-[#dfe5ed] bg-white px-[27px] py-[31px] text-[17px] leading-none text-[#0e131e]">
-              <li>{st("1. 打开对应平台兑换入口")}</li>
-              <li>{st("2. 输入上方卡密完成兑换")}</li>
-              <li>{st("3. 有问题可凭订单号联系客服")}</li>
-            </ol>
+          <section className="success-mobile-product-info mt-7 rounded-[20px] border border-[#dfe5ed] bg-white px-5 py-5">
+            <div className="grid gap-4">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-[#6b7990]">{st("商品名称")}</p>
+                <p className="mt-2 break-all text-[17px] font-bold leading-6 text-[#0e131e]">{order.product_name}</p>
+              </div>
+              <div>
+                <p className="text-[13px] font-semibold text-[#6b7990]">{st("数量")}</p>
+                <p className="mt-2 text-[17px] font-bold leading-none text-[#0e131e]">x{order.quantity}</p>
+              </div>
+              {usageInstructions && (
+                <div className="min-w-0 border-t border-[#e8eef6] pt-4">
+                  <p className="text-[13px] font-semibold text-[#6b7990]">{st("使用说明")}</p>
+                  <p className="mt-2 text-[15px] font-semibold leading-6 text-[#0e131e]">
+                    {usageInstructionsHref ? (
+                      <a href={usageInstructionsHref} target="_blank" rel="noreferrer" className="break-all text-[#0e4beb]">
+                        {usageInstructions}
+                      </a>
+                    ) : (
+                      <span className="break-all">{usageInstructions}</span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
           </section>
         </main>
       </div>
@@ -189,13 +237,25 @@ export default function SuccessPage() {
                 <div className="success-product-body min-w-0 pt-3">
                   <div className="flex flex-wrap items-center gap-3">
                     <h1 className="text-[24px] font-bold leading-tight text-[#0e131e]">{order.product_name}</h1>
-                    <span className="rounded-full bg-[#e8f2ff] px-4 py-1.5 text-[12px] font-bold text-[#0e4beb]">{st("自动发卡")}</span>
-                    <span className="rounded-full bg-[#e8faf4] px-4 py-1.5 text-[12px] font-bold text-[#07a577]">{st("已发卡")}</span>
+                    <span className="rounded-full bg-[#e8f2ff] px-4 py-1.5 text-[12px] font-bold text-[#0e4beb]">{isPreorder ? st("提前抢购") : st("自动发卡")}</span>
+                    <span className="rounded-full bg-[#e8faf4] px-4 py-1.5 text-[12px] font-bold text-[#07a577]">{isPreorder ? st(isDelivered ? "已发货" : "待发货") : st("已发卡")}</span>
                   </div>
                   <p className="mt-3 max-w-[600px] text-[14px] leading-6 text-[#6b7990]">
-                    {st("订单已自动发卡，请及时保存卡密")}
+                    {isPreorder ? st(isDelivered ? "商家已完成发货" : "商家会手动发货，请等待处理") : st("订单已自动发卡，请及时保存卡密")}
                     <span className="ml-2">{st("数量")}：{order.quantity} {st("件")}</span>
                   </p>
+                  {usageInstructions && (
+                    <p className="mt-2 max-w-[720px] text-[14px] font-semibold leading-6 text-[#5c697d]">
+                      <span>{st("使用说明")}：</span>
+                      {usageInstructionsHref ? (
+                        <a href={usageInstructionsHref} target="_blank" rel="noreferrer" className="break-all text-[#0e4beb] hover:underline">
+                          {usageInstructions}
+                        </a>
+                      ) : (
+                        <span className="break-all">{usageInstructions}</span>
+                      )}
+                    </p>
+                  )}
                   <div className="success-order-meta-grid mt-4 grid gap-3 text-[#6b7990]">
                     <div className="success-order-meta success-order-no flex min-w-0 items-center gap-2 rounded-[12px] border border-[#dfe5ed] bg-white px-4 py-2.5">
                       <span className="shrink-0 text-[12px] font-semibold">{st("订单号")}：</span>
@@ -207,6 +267,12 @@ export default function SuccessPage() {
                       <span className="shrink-0 text-[12px] font-semibold">{st("购买时间：")}</span>
                       <strong className="min-w-0 whitespace-nowrap text-[12px] font-semibold text-[#0e131e]">{order.paid_at || "-"}</strong>
                     </div>
+                    {isPreorder && (
+                      <div className="success-order-meta flex min-w-0 items-center gap-2 rounded-[12px] border border-[#dfe5ed] bg-white px-4 py-2.5">
+                        <span className="shrink-0 text-[12px] font-semibold">{st("发货时间：")}</span>
+                        <strong className="min-w-0 whitespace-nowrap text-[12px] font-semibold text-[#0e131e]">{order.delivered_at || "-"}</strong>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -218,8 +284,10 @@ export default function SuccessPage() {
 
             <section className="success-code-panel mt-6 flex min-h-0 w-full flex-1 flex-col rounded-[18px] border border-[#d9e6f5] bg-[#f8fbff] px-[clamp(42px,3.5vw,68px)] pb-5 pt-5">
               <div className="success-code-heading flex items-center justify-between border-b border-[#e8eef6] pb-5">
-                <h2 className="text-[22px] font-bold text-[#0e131e]">{st("已发放卡密")}</h2>
-                <button
+                <div className="flex min-w-0 items-center gap-5">
+                  <h2 className="shrink-0 text-[22px] font-bold text-[#0e131e]">{isPreorder ? st("发货信息") : st("已发放卡密")}</h2>
+                </div>
+                {!isPreorder && <button
                   type="button"
                   onClick={copyAll}
                   disabled={order.codes.length === 0}
@@ -227,11 +295,19 @@ export default function SuccessPage() {
                 >
                   <CopyIcon className="size-4" />
                   {copied ? st("已复制") : st("全部复制")}
-                </button>
+                </button>}
               </div>
 
               <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto pr-2">
-                {order.codes.length > 0 ? (
+                {isPreorder ? (
+                  <div className="rounded-[12px] border border-[#d9e6f5] bg-white px-7 py-8 text-center text-[15px] leading-7 text-[#5c697d]">
+                    {deliveryInfo ? (
+                      <p className="whitespace-pre-wrap break-words rounded-[12px] bg-[#f8fbff] px-4 py-3 text-left font-mono text-[14px] leading-6 text-[#0e131e]">{deliveryInfo}</p>
+                    ) : (
+                      <p>{st("等待发货中.......")}</p>
+                    )}
+                  </div>
+                ) : order.codes.length > 0 ? (
                   order.codes.map((code, index) => (
                     <div key={code.id} className="success-code-row grid min-h-[44px] grid-cols-[1fr_auto] items-center gap-4 rounded-[10px] border border-[#d9e6f5] bg-white px-7 py-2">
                       <p className="break-all font-mono text-[15px] font-semibold leading-6 text-[#0e131e]">
@@ -253,7 +329,7 @@ export default function SuccessPage() {
                 )}
               </div>
 
-              <p className="mt-4 text-[14px] text-[#8e99aa]">{st("离开页面前请确认已经复制或截图保存。")}</p>
+              <p className="mt-4 text-[14px] text-[#8e99aa]">{isPreorder ? st("可在订单查询页查看最新发货状态。") : st("离开页面前请确认已经复制或截图保存。")}</p>
             </section>
           </section>
 
@@ -261,15 +337,6 @@ export default function SuccessPage() {
             <p className="text-center text-[13px] text-[#8e99aa]">
               {st("如未收到卡密或支付状态异常，可通过订单查询页查看最新状态，或联系客服。")}
             </p>
-
-            <section className="success-next-steps mt-3 flex w-full items-center rounded-[18px] border border-[#dfe5ed] bg-white px-8 py-4">
-              <h3 className="mr-10 text-[16px] font-bold text-[#0e131e]">{st("下一步建议")}</h3>
-              <ol className="flex flex-1 items-center justify-between gap-6 text-[13px] text-[#6b7990]">
-                <li>{st("1. 复制卡密并前往对应平台兑换")}</li>
-                <li>{st("2. 可在订单查询页再次查看订单")}</li>
-                <li>{st("3. 如卡密异常，请保留订单号联系客服")}</li>
-              </ol>
-            </section>
           </div>
         </main>
       </div>

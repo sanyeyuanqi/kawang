@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 import re
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -10,6 +11,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.config import settings
+from app.api.deps import prime_admin_access_cache
 from app.database import get_db
 from app.models.user import User
 from app.api.deps import get_current_user
@@ -34,6 +36,8 @@ from app.utils.security import (
 
 router = APIRouter()
 security = HTTPBearer(auto_error=False)
+_USER_RESPONSE_CACHE_TTL_SECONDS = 30
+_user_response_cache: dict[int, tuple[float, dict[str, Any]]] = {}
 
 # ---------------------------------------------------------------------------
 # Request / Response schemas
@@ -117,6 +121,25 @@ def _build_user_response(user: User) -> dict[str, Any]:
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "updated_at": user.updated_at.isoformat() if user.updated_at else None,
     }
+
+
+def _cached_user_response(user_id: int) -> dict[str, Any] | None:
+    item = _user_response_cache.get(user_id)
+    if item is None:
+        return None
+    expires_at, value = item
+    if expires_at <= monotonic():
+        _user_response_cache.pop(user_id, None)
+        return None
+    return value
+
+
+def _set_cached_user_response(user_id: int, value: dict[str, Any]) -> None:
+    _user_response_cache[user_id] = (monotonic() + _USER_RESPONSE_CACHE_TTL_SECONDS, value)
+
+
+def _clear_cached_user_response(user_id: int) -> None:
+    _user_response_cache.pop(user_id, None)
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +248,8 @@ async def auth_register(
     refresh_ttl = settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
     await redis_set(RedisKeys.auth_token(user.id), access_token, ttl=access_ttl)
     await redis_set(RedisKeys.refresh_token(user.id), refresh_token, ttl=refresh_ttl)
+    if role == "admin":
+        prime_admin_access_cache(user.id)
 
     return {
         "code": 200,
@@ -353,10 +378,16 @@ async def auth_reset_password(req: ResetPasswordRequest, db=Depends(get_db)) -> 
 
 @router.get("/users/me")
 async def get_me(current_user: dict = Depends(get_current_user), db=Depends(get_db)) -> dict[str, Any]:
-    user = (await db.execute(select(User).where(User.id == int(current_user["sub"])))).scalar_one_or_none()
+    user_id = int(current_user["sub"])
+    cached = _cached_user_response(user_id)
+    if cached is not None:
+        return {"code": 200, "msg": "success", "data": cached}
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None:
         _error(404, 404, "用户不存在")
-    return {"code": 200, "msg": "success", "data": _build_user_response(user)}
+    data = _build_user_response(user)
+    _set_cached_user_response(user_id, data)
+    return {"code": 200, "msg": "success", "data": data}
 
 
 @router.put("/users/me")
@@ -376,7 +407,9 @@ async def update_me(req: UpdateUserRequest, current_user: dict = Depends(get_cur
             _error(409, 409, "该用户名已注册")
         user.username = username
     await db.flush()
-    return {"code": 200, "msg": "success", "data": _build_user_response(user)}
+    data = _build_user_response(user)
+    _set_cached_user_response(user.id, data)
+    return {"code": 200, "msg": "success", "data": data}
 
 
 # ---------------------------------------------------------------------------
@@ -397,6 +430,7 @@ async def auth_logout(
         _error(401, 401, "无效的访问令牌")
 
     user_id = int(payload["sub"])
+    _clear_cached_user_response(user_id)
     await redis_delete(RedisKeys.auth_token(user_id))
     await redis_delete(RedisKeys.refresh_token(user_id))
 

@@ -1,4 +1,5 @@
 from datetime import datetime
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
@@ -11,8 +12,15 @@ from app.api.v1.announcements import announcement_dict
 from app.database import get_db
 from app.models.announcement import Announcement
 from app.services.catalog_cache import invalidate_announcement_cache
+from app.utils.db_indexes import mysql_index_exists
 
 router = APIRouter()
+_ADMIN_ANNOUNCEMENT_CACHE_TTL_SECONDS = 60
+_admin_announcement_cache: dict[tuple[str | None, str, int, int], tuple[float, dict[str, Any]]] = {}
+
+
+def clear_admin_announcement_cache() -> None:
+    _admin_announcement_cache.clear()
 
 
 class AnnouncementPayload(BaseModel):
@@ -115,22 +123,35 @@ async def list_announcements(
     offset: int = Query(0, ge=0),
     limit: int = Query(10, ge=1, le=100),
 ) -> dict[str, Any]:
+    cache_key = (q.strip() if q else None, status, offset, limit)
+    cached = _admin_announcement_cache.get(cache_key)
+    if cached is not None and cached[0] > monotonic():
+        return cached[1]
+
     conditions = _base_conditions(q, status)
+    has_search = bool(q and q.strip())
+    admin_index = "ix_announcement_admin_status_sort" if status in ("published", "draft") else "ix_announcement_admin_sort"
     stmt = (
-        select(Announcement, func.count().over().label("total_count"))
+        select(Announcement)
         .where(*conditions)
         .order_by(Announcement.sort_order, Announcement.id.desc())
         .offset(offset)
         .limit(limit)
     )
-    rows = (await db.execute(stmt)).all()
-    total = int(rows[0].total_count) if rows else 0
+    count_stmt = select(func.count(Announcement.id)).where(*conditions)
+    if not has_search and await mysql_index_exists(db, "announcement", admin_index):
+        stmt = stmt.with_hint(Announcement, f"FORCE INDEX ({admin_index})", dialect_name="mysql")
+        count_stmt = count_stmt.with_hint(Announcement, f"FORCE INDEX ({admin_index})", dialect_name="mysql")
+    announcements = (await db.execute(stmt)).scalars().all()
+    total = await db.scalar(count_stmt) or 0
 
     stats_stmt = (
         select(Announcement.is_published, func.count(Announcement.id))
         .where(*_base_conditions(q, "all"))
         .group_by(Announcement.is_published)
     )
+    if not has_search and await mysql_index_exists(db, "announcement", "ix_announcement_admin_status_sort"):
+        stats_stmt = stats_stmt.with_hint(Announcement, "FORCE INDEX (ix_announcement_admin_status_sort)", dialect_name="mysql")
     stats_rows = (await db.execute(stats_stmt)).all()
     status_counts = {bool(is_published): int(count) for is_published, count in stats_rows}
     stats = {
@@ -138,17 +159,19 @@ async def list_announcements(
         "published": status_counts.get(True, 0),
         "draft": status_counts.get(False, 0),
     }
-    return {
+    response = {
         "code": 200,
         "msg": "success",
         "data": {
-            "items": [_admin_announcement_dict(row[0]) for row in rows],
-            "total": total,
+            "items": [_admin_announcement_dict(announcement) for announcement in announcements],
+            "total": int(total),
             "offset": offset,
             "limit": limit,
             "stats": stats,
         },
     }
+    _admin_announcement_cache[cache_key] = (monotonic() + _ADMIN_ANNOUNCEMENT_CACHE_TTL_SECONDS, response)
+    return response
 
 
 @router.post("/announcements")
@@ -172,6 +195,7 @@ async def create_announcement(
     if announcement.is_pinned:
         await _unpin_other_announcements(db, announcement.id)
     await db.refresh(announcement)
+    clear_admin_announcement_cache()
     await invalidate_announcement_cache()
     return {"code": 200, "msg": "success", "data": _admin_announcement_dict(announcement)}
 
@@ -204,6 +228,7 @@ async def update_announcement(
         await _unpin_other_announcements(db, announcement.id)
         await db.flush()
     await db.refresh(announcement)
+    clear_admin_announcement_cache()
     await invalidate_announcement_cache()
     return {"code": 200, "msg": "success", "data": _admin_announcement_dict(announcement)}
 
@@ -220,5 +245,6 @@ async def delete_announcement(
     announcement.is_pinned = False
     announcement.published_at = None
     await db.flush()
+    clear_admin_announcement_cache()
     await invalidate_announcement_cache()
     return {"code": 200, "msg": "success", "data": None}

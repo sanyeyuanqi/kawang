@@ -19,6 +19,7 @@ class CodeKey(Base):
         Index("ix_code_key_status_deleted_product", "status", "is_deleted", "product_id"),
         Index("ix_code_key_order_status_deleted", "order_id", "status", "is_deleted"),
         Index("ix_code_key_product_deleted_id", "product_id", "is_deleted", "id"),
+        Index("ix_code_key_deleted_product_status_created", "is_deleted", "product_id", "status", "created_at"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

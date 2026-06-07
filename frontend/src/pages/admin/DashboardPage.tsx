@@ -19,6 +19,9 @@ interface DashboardData {
   today_orders?: DashboardOrder[]
   overview_orders?: DashboardOrder[]
   recent_orders?: DashboardOrder[]
+  overview_total?: number
+  overview_offset?: number
+  overview_limit?: number
 }
 
 interface DashboardOrder {
@@ -34,6 +37,7 @@ interface DashboardOrder {
 const statusLabel: Record<string, string> = {
   pending: "待支付",
   paid: "已发卡",
+  delivered: "已发货",
   cancelled: "已取消",
   canceled: "已取消",
   refunded: "已退款",
@@ -42,28 +46,33 @@ const statusLabel: Record<string, string> = {
 const statusClass: Record<string, string> = {
   pending: "bg-warning-50 text-warning-600",
   paid: "bg-success-50 text-success-600",
+  delivered: "bg-success-50 text-success-600",
   cancelled: "bg-gray-100 text-gray-500",
   canceled: "bg-gray-100 text-gray-500",
   refunded: "bg-danger-50 text-danger-500",
 }
+const OVERVIEW_PAGE_SIZE = 10
 
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [overviewOffset, setOverviewOffset] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError("")
     try {
-      const res = await api.get("/admin/dashboard")
+      const res = await api.get("/admin/dashboard", {
+        params: { overview_offset: overviewOffset, overview_limit: OVERVIEW_PAGE_SIZE },
+      })
       setData(res.data.data)
     } catch (err: any) {
       setError(err.response?.data?.msg || "系统概览加载失败")
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [overviewOffset])
 
   useEffect(() => {
     load()
@@ -71,6 +80,9 @@ export default function DashboardPage() {
 
   const stats = data?.stats
   const overviewOrders = data?.overview_orders ?? data?.today_orders ?? data?.recent_orders ?? []
+  const overviewTotal = data?.overview_total ?? overviewOrders.length
+  const overviewPage = Math.floor(overviewOffset / OVERVIEW_PAGE_SIZE) + 1
+  const overviewTotalPages = Math.max(1, Math.ceil(overviewTotal / OVERVIEW_PAGE_SIZE))
   const cards = stats ? [
     { label: "今日收入", value: formatPrice(stats.today_revenue), tone: "red" as const },
     { label: "总订单", value: stats.total_orders ?? 0, tone: "blue" as const },
@@ -91,7 +103,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {loading && !error && (
+      {loading && !data && !error && (
         <div className="admin-dashboard-panel rounded-[18px] bg-white p-5 shadow-[0_22px_60px_rgba(15,23,42,0.06)] md:p-8">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 4 }).map((_, index) => (
@@ -102,7 +114,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {!loading && !error && (
+      {data && !error && (
       <div className="admin-dashboard-panel rounded-[18px] bg-white p-5 shadow-[0_22px_60px_rgba(15,23,42,0.06)] md:p-8">
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map((card) => (
@@ -113,7 +125,7 @@ export default function DashboardPage() {
         <section className="admin-recent-orders mt-8 rounded-[18px] border border-[#edf1f6] bg-[#fbfdff] p-5">
           <div className="flex items-center justify-between">
             <h2 className="admin-section-title text-18 font-bold text-[#111827]">今日订单 / 待支付</h2>
-            <span className="admin-section-meta text-13 text-[#8e99aa]">共 {overviewOrders.length} 条</span>
+            <span className="admin-section-meta text-13 text-[#8e99aa]">共 {overviewTotal} 条</span>
           </div>
 
           {overviewOrders.length ? (
@@ -133,6 +145,26 @@ export default function DashboardPage() {
           ) : (
             <EmptyState title="暂无今日订单或待支付订单" description="有新订单或待支付订单后会自动显示在这里。" className="mt-4 rounded-[14px] bg-white" />
           )}
+
+          <div className="mt-4 flex flex-col gap-3 border-t border-[#edf1f6] pt-4 text-14 text-[#6b7990] md:flex-row md:items-center md:justify-between">
+            <span>第 {overviewPage} / {overviewTotalPages} 页</span>
+            <div className="flex gap-2">
+              <button
+                disabled={overviewOffset === 0}
+                onClick={() => setOverviewOffset(Math.max(0, overviewOffset - OVERVIEW_PAGE_SIZE))}
+                className="h-10 rounded-[12px] border border-[#dfe6ef] px-4 font-semibold text-[#4f5b70] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                上一页
+              </button>
+              <button
+                disabled={overviewPage >= overviewTotalPages}
+                onClick={() => setOverviewOffset(overviewOffset + OVERVIEW_PAGE_SIZE)}
+                className="h-10 rounded-[12px] border border-[#dfe6ef] px-4 font-semibold text-[#4f5b70] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                下一页
+              </button>
+            </div>
+          </div>
         </section>
       </div>
       )}

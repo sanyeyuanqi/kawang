@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.api.deps import get_current_admin
+from app.api.deps import get_current_admin, prime_admin_access_cache
 from app.models.user import User
 from app.utils.redis import RedisKeys, redis_delete, redis_set
 from app.utils.security import create_access_token, create_refresh_token, verify_password
@@ -47,6 +47,7 @@ async def admin_login(req: AdminLoginRequest, db: AsyncSession = Depends(get_db)
         refresh_token,
         ttl=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
     )
+    prime_admin_access_cache(admin.id)
 
     return {
         "code": 200,

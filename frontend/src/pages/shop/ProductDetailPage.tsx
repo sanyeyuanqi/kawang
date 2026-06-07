@@ -148,6 +148,9 @@ export default function ProductDetailPage() {
   const coverImage = resolveAssetUrl(product.cover_image)
   const showImage = Boolean(coverImage && !imageFailed)
   const soldOut = product.available_stock <= 0 || !product.is_on_sale
+  const isPreorder = product.product_type === "preorder"
+  const deliveryLabel = isPreorder ? st("提前抢购") : st("自动发卡")
+  const fulfillmentLabel = isPreorder ? st("人工发货") : st("付款后自动发卡")
   const purchaseLabel = soldOut ? t("common.outOfStock") : st("立即购买")
   const canDecreaseQuantity = !soldOut && quantity > 1
   const canIncreaseQuantity = !soldOut && quantity < product.available_stock
@@ -204,7 +207,7 @@ export default function ProductDetailPage() {
         </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
-          <span className="rounded-full bg-[#e8faf4] px-4 py-2 text-[13px] font-medium text-[#08a678]">{st("自动发卡")}</span>
+          <span className="rounded-full bg-[#e8faf4] px-4 py-2 text-[13px] font-medium text-[#08a678]">{deliveryLabel}</span>
           <span className="rounded-full bg-[#fff6df] px-4 py-2 text-[13px] font-medium text-[#f09e1f]">{st("库存")} {product.available_stock}</span>
           <span className="rounded-full bg-[#fff1f1] px-4 py-2 text-[13px] font-medium text-[#ec3c30]">{st("已售")} {product.sold_count ?? 0}</span>
           <span className="rounded-full bg-[#ebf2ff] px-4 py-2 text-[13px] font-medium text-[#0e4beb]">{st("售后在线")}</span>
@@ -274,7 +277,7 @@ export default function ProductDetailPage() {
                   "VIP CARD"
                 )}
                 <div className="absolute bottom-6 left-6 flex gap-3">
-                  <span className="rounded-full bg-[#e8faf4] px-4 py-2 text-[13px] font-medium tracking-normal text-[#08a678]">{st("自动发卡")}</span>
+                  <span className="rounded-full bg-[#e8faf4] px-4 py-2 text-[13px] font-medium tracking-normal text-[#08a678]">{deliveryLabel}</span>
                   <span className="rounded-full bg-[#fff6df] px-4 py-2 text-[13px] font-medium tracking-normal text-[#f09e1f]">{st("库存")} {product.available_stock}</span>
                   <span className="rounded-full bg-[#fff1f1] px-4 py-2 text-[13px] font-medium tracking-normal text-[#ec3c30]">{st("已售")} {product.sold_count ?? 0}</span>
                   <span className="rounded-full bg-white/80 px-4 py-2 text-[13px] font-medium tracking-normal text-[#0e4beb]">{st("售后在线")}</span>
@@ -284,7 +287,7 @@ export default function ProductDetailPage() {
               <div className="mt-6 grid grid-cols-3 gap-4">
                 <div className="rounded-[16px] border border-[#dfe5ed] bg-[#fafbfd] px-5 py-5">
                   <p className="text-[13px] text-[#737d8f]">{st("发货方式")}</p>
-                  <p className="mt-2 text-[16px] font-semibold text-[#0e131e]">{st("付款后自动发卡")}</p>
+                  <p className="mt-2 text-[16px] font-semibold text-[#0e131e]">{fulfillmentLabel}</p>
                 </div>
                 <div className="rounded-[16px] border border-[#dfe5ed] bg-[#fafbfd] px-5 py-5">
                   <p className="text-[13px] text-[#737d8f]">{st("查询方式")}</p>
@@ -368,6 +371,7 @@ export default function ProductDetailPage() {
                   {st("虚拟商品无需登录即可购买，付款后自动发卡。请保存填写的联系方式，后续可凭它查询卡密。")}
                 </p>
               </div>
+
             </div>
           </div>
         </div>
@@ -433,8 +437,8 @@ export default function ProductDetailPage() {
             {createdOrder && payStatus === "polling" && <p className="mt-4 text-center text-[13px] text-[#cbd5e1]">{st("等待支付确认中...")}</p>}
             {payStatus === "paid" && (
               <div className="mt-4 text-center">
-                <p className="text-[14px] font-semibold text-[#08a678]">{st("支付成功，卡密已发出")}</p>
-                {createdOrder && <Link to={`/orders/${createdOrder.order_no}/success`} className="mt-2 inline-flex text-[14px] font-semibold text-[#7aa2ff]">{st("查看卡密")}</Link>}
+                <p className="text-[14px] font-semibold text-[#08a678]">{isPreorder ? st("支付成功，请等待发货") : st("支付成功，卡密已发出")}</p>
+                {createdOrder && <Link to={`/orders/${createdOrder.order_no}/success`} className="mt-2 inline-flex text-[14px] font-semibold text-[#7aa2ff]">{isPreorder ? st("查看订单") : st("查看卡密")}</Link>}
               </div>
             )}
             {payStatus === "timeout" && <p className="mt-4 text-center text-[13px] text-[#f09e1f]">{st("支付确认超时，可在订单查询页查看最新状态")}</p>}

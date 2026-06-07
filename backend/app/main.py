@@ -22,19 +22,25 @@ class AppError(Exception):
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
-        from app.utils.redis import get_redis
+        from app.utils.redis import get_redis, mark_redis_unavailable
         r = await get_redis()
         await r.ping()
         print("[OK] Redis connected")
     except Exception as e:
+        mark_redis_unavailable()
         print(f"[WARN] Redis not available: {e}")
 
     try:
         from app.database import engine
+        from app.services.startup_warmup import warm_admin_read_caches, warm_database_pool
+        from app.utils.db_indexes import preload_mysql_index_cache
         async with engine.connect() as conn:
             await conn.execute(  # type: ignore
                 __import__("sqlalchemy").text("SELECT 1")
             )
+        await warm_database_pool(engine)
+        await preload_mysql_index_cache(engine)
+        await warm_admin_read_caches()
         print("[OK] Database connected")
     except Exception as e:
         print(f"[WARN] Database not available: {e}")

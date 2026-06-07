@@ -1,10 +1,10 @@
-import json
 import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
-from app.utils.redis import get_redis, RedisKeys
+from app.services.catalog_cache import cache_get_json, cache_set_json
+from app.utils.redis import RedisKeys
 from app.models.shop_config import ShopConfig
 
 logger = logging.getLogger(__name__)
@@ -14,13 +14,9 @@ CACHE_TTL = 1800
 
 @router.get("/shop")
 async def get_shop_config(db: AsyncSession = Depends(get_db)):
-    try:
-        r = await get_redis()
-        cached = await r.get(RedisKeys.shop_cache())
-        if cached:
-            return {"code": 200, "msg": "success", "data": json.loads(cached)}
-    except Exception:
-        r = None
+    cached = await cache_get_json(RedisKeys.shop_cache())
+    if cached is not None:
+        return {"code": 200, "msg": "success", "data": cached}
 
     stmt = select(ShopConfig).where(ShopConfig.id == 1)
     result = await db.execute(stmt)
@@ -37,10 +33,6 @@ async def get_shop_config(db: AsyncSession = Depends(get_db)):
         "updated_at": config.updated_at.isoformat() if config.updated_at else None,
     }
 
-    if r:
-        try:
-            await r.setex(RedisKeys.shop_cache(), CACHE_TTL, json.dumps(data, ensure_ascii=False))
-        except Exception:
-            pass
+    await cache_set_json(RedisKeys.shop_cache(), data, CACHE_TTL)
 
     return {"code": 200, "msg": "success", "data": data}

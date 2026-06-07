@@ -38,6 +38,7 @@ export interface Announcement {
 export interface Product {
   id: number; category_id: number; name: string; description: string
   cover_image: string | null; price: string; sort_order: number
+  product_type?: "auto_delivery" | "preorder"; preorder_stock?: number
   available_stock: number; sold_count: number; is_on_sale: boolean; category_name?: string
 }
 
@@ -45,9 +46,9 @@ export interface ProductDetail extends Product { stock_count?: number; category_
 
 export interface OrderResult {
   order_no: string; status: string; total_amount: string; product_name: string
-  quantity: number; contact_info: string
+  product_type?: string; quantity: number; contact_info: string; usage_instructions?: string | null
   codes: { id: number; code_value: string }[]
-  paid_at: string | null; created_at: string
+  paid_at: string | null; delivered_at?: string | null; delivery_info?: string | null; created_at: string
 }
 
 export interface User {

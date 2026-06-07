@@ -14,8 +14,11 @@ export interface AdminProductItem {
   category_name?: string | null
   name: string
   description: string | null
+  usage_instructions?: string | null
   cover_image?: string | null
   price: string
+  product_type?: "auto_delivery" | "preorder"
+  preorder_stock?: number
   sort_order: number
   sold_count: number
   stock: number
@@ -28,7 +31,10 @@ interface ProductFormState {
   name: string
   category_id: string
   description: string
+  usage_instructions: string
   price: string
+  product_type: "auto_delivery" | "preorder"
+  preorder_stock: string
   sort_order: string
   sold_count: string
   cover_image: string
@@ -46,10 +52,23 @@ const emptyForm: ProductFormState = {
   name: "",
   category_id: "",
   description: "",
+  usage_instructions: "",
   price: "",
+  product_type: "auto_delivery",
+  preorder_stock: "0",
   sort_order: "0",
   sold_count: "0",
   cover_image: "",
+}
+
+function getFormErrorMessage(err: any, fallback: string) {
+  const data = err.response?.data
+  if (data?.msg) return data.msg
+  const detail = data?.detail
+  if (Array.isArray(detail) && typeof detail[0]?.msg === "string") {
+    return detail[0].msg.replace(/^Value error,\s*/, "")
+  }
+  return fallback
 }
 
 export default function ProductFormModal({ open, product, categories, onClose, onSaved }: ProductFormModalProps) {
@@ -65,7 +84,10 @@ export default function ProductFormModal({ open, product, categories, onClose, o
         name: product.name,
         category_id: product.category_id ? String(product.category_id) : "",
         description: product.description || "",
+        usage_instructions: product.usage_instructions || "",
         price: product.price,
+        product_type: product.product_type || "auto_delivery",
+        preorder_stock: String(product.preorder_stock ?? product.available_stock ?? 0),
         sort_order: String(product.sort_order),
         sold_count: String(product.sold_count ?? 0),
         cover_image: product.cover_image || "",
@@ -87,7 +109,7 @@ export default function ProductFormModal({ open, product, categories, onClose, o
       })
       setForm((prev) => ({ ...prev, cover_image: res.data.data.url }))
     } catch (err: any) {
-      setError(err.response?.data?.msg || "图片上传失败")
+      setError(getFormErrorMessage(err, "图片上传失败"))
     } finally {
       setUploading(false)
     }
@@ -101,8 +123,11 @@ export default function ProductFormModal({ open, product, categories, onClose, o
       name: form.name.trim(),
       category_id: form.category_id ? Number(form.category_id) : null,
       description: form.description.trim() || null,
+      usage_instructions: form.usage_instructions.trim() || null,
       cover_image: form.cover_image || null,
       price: form.price,
+      product_type: form.product_type,
+      preorder_stock: form.product_type === "preorder" ? Number(form.preorder_stock || 0) : 0,
       sort_order: Number(form.sort_order || 0),
       sold_count: Number(form.sold_count || 0),
     }
@@ -112,7 +137,7 @@ export default function ProductFormModal({ open, product, categories, onClose, o
       else await api.post("/admin/products", payload)
       onSaved()
     } catch (err: any) {
-      setError(err.response?.data?.msg || "商品保存失败")
+      setError(getFormErrorMessage(err, "商品保存失败"))
     } finally {
       setSaving(false)
     }
@@ -156,6 +181,30 @@ export default function ProductFormModal({ open, product, categories, onClose, o
             </select>
           </label>
           <label className="space-y-2 text-14 font-medium text-[#3f495b]">
+            <span>商品类型</span>
+            <select
+              value={form.product_type}
+              onChange={(event) => setForm({ ...form, product_type: event.target.value as ProductFormState["product_type"] })}
+              className="h-12 w-full rounded-[12px] border border-[#dfe6ef] bg-white px-4 text-14 outline-none focus:border-primary-500"
+            >
+              <option value="auto_delivery">自动发货</option>
+              <option value="preorder">提前抢购</option>
+            </select>
+          </label>
+          {form.product_type === "preorder" && (
+            <label className="space-y-2 text-14 font-medium text-[#3f495b]">
+              <span>自定义库存</span>
+              <input
+                type="number"
+                min={0}
+                value={form.preorder_stock}
+                onChange={(event) => setForm({ ...form, preorder_stock: event.target.value })}
+                className="h-12 w-full rounded-[12px] border border-[#dfe6ef] bg-white px-4 text-14 outline-none focus:border-primary-500"
+                placeholder="0"
+              />
+            </label>
+          )}
+          <label className="space-y-2 text-14 font-medium text-[#3f495b]">
             <span>排序</span>
             <input
               type="number"
@@ -185,6 +234,16 @@ export default function ProductFormModal({ open, product, categories, onClose, o
             onChange={(event) => setForm({ ...form, description: event.target.value })}
             className="min-h-[112px] w-full rounded-[12px] border border-[#dfe6ef] bg-white px-4 py-3 text-14 outline-none focus:border-primary-500"
             placeholder="填写前台展示的商品说明"
+          />
+        </label>
+
+        <label className="block space-y-2 text-14 font-medium text-[#3f495b]">
+          <span>使用说明</span>
+          <textarea
+            value={form.usage_instructions}
+            onChange={(event) => setForm({ ...form, usage_instructions: event.target.value })}
+            className="min-h-[96px] w-full rounded-[12px] border border-[#dfe6ef] bg-white px-4 py-3 text-14 outline-none focus:border-primary-500"
+            placeholder="填写使用说明网址或文字教程"
           />
         </label>
 

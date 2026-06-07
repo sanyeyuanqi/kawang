@@ -82,19 +82,20 @@ async def seed() -> None:
             category_map[name] = category
 
         products = [
-            ("视频会员月卡", "会员卡券", "自动发卡，可在订单查询页找回。", Decimal("18.80"), 40),
-            ("Steam 充值卡", "游戏充值", "Steam 钱包充值兑换码，付款后自动发货。", Decimal("50.00"), 30),
-            ("软件授权码", "软件授权", "常用效率工具授权码，支持在线激活。", Decimal("29.90"), 20),
-            ("学习资料包", "学习资料", "课程讲义、题库与素材压缩包兑换码。", Decimal("9.90"), 10),
+            ("视频会员月卡", "会员卡券", "自动发卡，可在订单查询页找回。", "https://example.com/redeem/video", Decimal("18.80"), 40),
+            ("Steam 充值卡", "游戏充值", "Steam 钱包充值兑换码，付款后自动发货。", "https://store.steampowered.com/account/redeemwalletcode", Decimal("50.00"), 30),
+            ("软件授权码", "软件授权", "常用效率工具授权码，支持在线激活。", "https://example.com/redeem/software", Decimal("29.90"), 20),
+            ("学习资料包", "学习资料", "课程讲义、题库与素材压缩包兑换码。", "https://example.com/redeem/course", Decimal("9.90"), 10),
         ]
         product_map: dict[str, Product] = {}
-        for name, category_name, description, price, sort_order in products:
+        for name, category_name, description, usage_instructions, price, sort_order in products:
             product = (await db.execute(select(Product).where(Product.name == name, Product.is_deleted == False))).scalar_one_or_none()
             if product is None:
                 product = Product(
                     category_id=category_map[category_name].id,
                     name=name,
                     description=description,
+                    usage_instructions=usage_instructions,
                     price=price,
                     sort_order=sort_order,
                 )
@@ -103,6 +104,7 @@ async def seed() -> None:
             else:
                 product.category_id = category_map[category_name].id
                 product.description = description
+                product.usage_instructions = usage_instructions
                 product.price = price
                 product.sort_order = sort_order
             product_map[name] = product

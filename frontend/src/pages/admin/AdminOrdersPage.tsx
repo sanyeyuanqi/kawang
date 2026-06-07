@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import type { ReactNode } from "react"
 import api from "@/api/client"
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog"
+import { Drawer } from "@/components/ui/Drawer"
+import { Modal } from "@/components/ui/Modal"
 import { Table } from "@/components/ui/Table"
 import type { TableColumn } from "@/components/ui/Table"
 import { useToast } from "@/components/ui/Toast"
@@ -20,25 +23,42 @@ interface OrderItem {
   product_id: number
   product_name: string
   product_price: string
+  product_type?: "auto_delivery" | "preorder" | string
   quantity: number
   total_amount: string
   contact_info: string
-  status: "pending" | "paid" | "cancelled" | "refunded" | string
+  status: "pending" | "paid" | "delivered" | "cancelled" | "refunded" | string
   pay_channel?: string | null
   haozpay_seq_id?: string | null
   refund_amount?: string | null
   refund_seq_id?: string | null
   paid_at?: string | null
+  delivered_at?: string | null
+  delivery_info?: string | null
   cancelled_at?: string | null
   created_at: string
+  refund_available?: boolean
+  refund_unavailable_reason?: string | null
+  payment_query_status?: string | null
+  refund_checked_at?: string | null
   codes?: OrderCode[]
 }
 
-type StatusKey = "" | "pending" | "paid" | "refunded" | "cancelled"
+type StatusKey = "" | "pending" | "paid" | "delivered" | "refunded" | "cancelled"
+
+interface OrderStats {
+  all: number
+  pending: number
+  paid: number
+  delivered: number
+  refunded: number
+  cancelled: number
+}
 
 const statusOptions: { key: StatusKey; label: string }[] = [
   { key: "", label: "全部" },
-  { key: "paid", label: "已发卡" },
+  { key: "paid", label: "待发货/已发卡" },
+  { key: "delivered", label: "已发货" },
   { key: "pending", label: "待支付" },
   { key: "refunded", label: "已退款" },
   { key: "cancelled", label: "已取消" },
@@ -47,6 +67,7 @@ const statusOptions: { key: StatusKey; label: string }[] = [
 const statusLabel: Record<string, string> = {
   pending: "待支付",
   paid: "已发卡",
+  delivered: "已发货",
   cancelled: "已取消",
   canceled: "已取消",
   refunded: "已退款",
@@ -55,10 +76,13 @@ const statusLabel: Record<string, string> = {
 const statusClass: Record<string, string> = {
   pending: "bg-warning-50 text-warning-600",
   paid: "bg-success-50 text-success-600",
+  delivered: "bg-success-50 text-success-600",
   cancelled: "bg-gray-100 text-gray-500",
   canceled: "bg-gray-100 text-gray-500",
   refunded: "bg-danger-50 text-danger-500",
 }
+
+const emptyStats: OrderStats = { all: 0, pending: 0, paid: 0, delivered: 0, refunded: 0, cancelled: 0 }
 
 export default function AdminOrdersPage() {
   const { addToast } = useToast()
@@ -68,14 +92,18 @@ export default function AdminOrdersPage() {
   const [status, setStatus] = useState<StatusKey>("")
   const [offset, setOffset] = useState(0)
   const [total, setTotal] = useState(0)
-  const [stats, setStats] = useState({ all: 0, pending: 0, paid: 0, refunded: 0, cancelled: 0 })
+  const [stats, setStats] = useState<OrderStats>(emptyStats)
   const [loading, setLoading] = useState(true)
   const [detailLoading, setDetailLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [resendTarget, setResendTarget] = useState<OrderItem | null>(null)
   const [resending, setResending] = useState(false)
   const [refundTarget, setRefundTarget] = useState<OrderItem | null>(null)
+  const [forceRefundTarget, setForceRefundTarget] = useState<OrderItem | null>(null)
   const [refunding, setRefunding] = useState(false)
+  const [deliveryTarget, setDeliveryTarget] = useState<OrderItem | null>(null)
+  const [deliveryInfo, setDeliveryInfo] = useState("")
+  const [delivering, setDelivering] = useState(false)
 
   const page = Math.floor(offset / PAGE_SIZE) + 1
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -88,7 +116,7 @@ export default function AdminOrdersPage() {
       })
       setItems(res.data.data.items)
       setTotal(res.data.data.total)
-      setStats(res.data.data.stats || { all: 0, pending: 0, paid: 0, refunded: 0, cancelled: 0 })
+      setStats(res.data.data.stats || emptyStats)
     } catch (err: any) {
       addToast({ type: "error", message: err.response?.data?.msg || "订单列表加载失败" })
     } finally {
@@ -138,19 +166,66 @@ export default function AdminOrdersPage() {
     }
   }
 
-  const refund = async () => {
+  const isFulfilledOrder = (item: OrderItem | null) => Boolean(item && (item.status === "delivered" || (item.status === "paid" && item.product_type !== "preorder")))
+  const canRefundOrder = (item: OrderItem | null) => Boolean(item?.refund_available)
+
+  const getRefundMessage = (item: OrderItem | null) => {
+    if (!item) return ""
+    if (item.product_type === "preorder") return `确定对订单 ${item.order_no} 发起退款吗？`
+    return `确定对订单 ${item.order_no} 发起退款并回收卡密吗？`
+  }
+
+  const requestRefund = () => {
     if (!refundTarget) return
+    if (isFulfilledOrder(refundTarget)) {
+      setForceRefundTarget(refundTarget)
+      setRefundTarget(null)
+      return
+    }
+    refund(refundTarget, false)
+  }
+
+  const refund = async (target: OrderItem | null = refundTarget, force = false) => {
+    if (!target) return
     setRefunding(true)
     try {
-      const res = await api.post(`/admin/orders/${refundTarget.id}/refund`, {})
+      const res = await api.post(`/admin/orders/${target.id}/refund`, { force })
       setSelected(res.data.data)
       setRefundTarget(null)
-      addToast({ type: "success", message: "退款已提交，卡密已回收" })
+      setForceRefundTarget(null)
+      addToast({ type: "success", message: target.product_type === "preorder" ? "退款已提交" : "退款已提交，卡密已回收" })
       await load()
     } catch (err: any) {
       addToast({ type: "error", message: err.response?.data?.msg || "退款失败" })
     } finally {
       setRefunding(false)
+    }
+  }
+
+  const openDeliveryModal = (order: OrderItem) => {
+    setDeliveryTarget(order)
+    setDeliveryInfo(order.delivery_info || "")
+  }
+
+  const deliver = async () => {
+    if (!deliveryTarget) return
+    const info = deliveryInfo.trim()
+    if (!info) {
+      addToast({ type: "warning", message: "请填写发货信息" })
+      return
+    }
+    setDelivering(true)
+    try {
+      const res = await api.post(`/admin/orders/${deliveryTarget.id}/deliver`, { delivery_info: info })
+      setSelected(res.data.data)
+      setDeliveryTarget(null)
+      setDeliveryInfo("")
+      addToast({ type: "success", message: "订单已确认发货" })
+      await load()
+    } catch (err: any) {
+      addToast({ type: "error", message: err.response?.data?.msg || "确认发货失败" })
+    } finally {
+      setDelivering(false)
     }
   }
 
@@ -186,10 +261,19 @@ export default function AdminOrdersPage() {
 
   const statItems = useMemo(() => [
     { label: "全部订单", value: stats.all, key: "" as StatusKey },
-    { label: "已发卡", value: stats.paid, key: "paid" as StatusKey },
+    { label: "待发货/已发卡", value: stats.paid, key: "paid" as StatusKey },
+    { label: "已发货", value: stats.delivered, key: "delivered" as StatusKey },
     { label: "待支付", value: stats.pending, key: "pending" as StatusKey },
     { label: "已退款", value: stats.refunded, key: "refunded" as StatusKey },
   ], [stats])
+
+  const getStatusLabel = (item: OrderItem) => {
+    if (item.status === "paid" && item.product_type === "preorder") return "待发货"
+    return statusLabel[item.status] || item.status
+  }
+
+  const canResendCodes = (item: OrderItem | null) => Boolean(item && item.status === "paid" && item.product_type !== "preorder")
+  const canDeliverOrder = (item: OrderItem | null) => Boolean(item && item.status === "paid" && item.product_type === "preorder")
 
   const columns: TableColumn<OrderItem>[] = [
     {
@@ -220,7 +304,7 @@ export default function AdminOrdersPage() {
       key: "status",
       title: "状态",
       width: 120,
-      render: (item) => <span className={`inline-flex h-8 items-center rounded-full px-3 text-13 font-medium ${statusClass[item.status] || "bg-gray-100 text-gray-500"}`}>{statusLabel[item.status] || item.status}</span>,
+      render: (item) => <span className={`inline-flex h-8 items-center rounded-full px-3 text-13 font-medium ${statusClass[item.status] || "bg-gray-100 text-gray-500"}`}>{getStatusLabel(item)}</span>,
     },
     {
       key: "created_at",
@@ -228,11 +312,36 @@ export default function AdminOrdersPage() {
       width: 180,
       render: (item) => <span className="text-[#6b7990]">{item.created_at}</span>,
     },
+    {
+      key: "actions",
+      title: "操作",
+      width: 170,
+      render: (item) => (
+        <div className="flex items-center gap-2">
+          {canDeliverOrder(item) && (
+            <button
+              type="button"
+              onClick={() => openDeliveryModal(item)}
+              className="h-9 rounded-[10px] bg-success-500 px-4 text-13 font-semibold text-white hover:bg-success-600"
+            >
+              发货
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => showDetail(item.id)}
+            className="h-9 rounded-[10px] bg-primary-500 px-4 text-13 font-semibold text-white hover:bg-primary-600"
+          >
+            查看详情
+          </button>
+        </div>
+      ),
+    },
   ]
 
   return (
-    <div className="space-y-5">
-      <div className="grid gap-4 md:grid-cols-4">
+    <div className="admin-orders-page space-y-5">
+      <div className="grid gap-4 md:grid-cols-5">
         {statItems.map((item) => (
           <button
             key={item.label}
@@ -282,9 +391,12 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="overflow-hidden rounded-[18px] bg-white shadow-[0_22px_60px_rgba(15,23,42,0.06)]">
-          <Table columns={columns} dataSource={items} rowKey="id" loading={loading} emptyText="暂无订单数据" onRowClick={(item) => showDetail(item.id)} />
+      <div className="overflow-hidden rounded-[18px] bg-white shadow-[0_22px_60px_rgba(15,23,42,0.06)]">
+          <div className="overflow-x-auto">
+            <div className="min-w-[1560px]">
+              <Table columns={columns} dataSource={items} rowKey="id" loading={loading} emptyText={detailLoading ? "订单详情加载中..." : "暂无订单数据"} />
+            </div>
+          </div>
           <div className="flex flex-col gap-3 border-t border-[#edf1f6] px-5 py-5 text-14 text-[#6b7990] md:flex-row md:items-center md:justify-between md:px-8">
             <span>共 {total} 个订单，第 {page} / {totalPages} 页</span>
             <div className="flex gap-2">
@@ -294,60 +406,112 @@ export default function AdminOrdersPage() {
           </div>
         </div>
 
-        <aside className="min-h-[520px] rounded-[18px] bg-white p-5 shadow-[0_22px_60px_rgba(15,23,42,0.06)]">
-          {!selected ? (
-            <div className="flex h-full min-h-[360px] items-center justify-center rounded-[14px] border border-dashed border-[#dfe6ef] text-14 text-[#8e99aa]">
-              {detailLoading ? "订单详情加载中..." : "选择左侧订单查看详情"}
-            </div>
-          ) : (
-            <div className="space-y-5">
-              <div className="flex items-start justify-between gap-3">
+      <Drawer open={!!selected} onClose={() => setSelected(null)} title="订单详情" width="820px">
+        {!selected ? null : (
+            <div className="space-y-5 p-5">
+              <div className="rounded-[18px] border border-[#25364d] bg-[#0b1422] px-5 py-5">
+                <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <h2 className="break-all font-mono text-18 font-bold text-[#111827]">{selected.order_no}</h2>
-                  <p className="mt-1 text-14 text-[#8e99aa]">{selected.product_name} x{selected.quantity}</p>
+                    <p className="text-13 font-semibold text-[#7f8fa8]">订单号</p>
+                    <h2 className="mt-2 break-all font-mono text-18 font-bold leading-6 text-[#f4f7fb]">{selected.order_no}</h2>
+                    <p className="mt-2 text-14 font-semibold text-[#d8e1ec]">{selected.product_name} <span className="text-[#8e99aa]">x{selected.quantity}</span></p>
                 </div>
-                <span className={`shrink-0 rounded-full px-3 py-1 text-13 font-medium ${statusClass[selected.status] || "bg-gray-100 text-gray-500"}`}>{statusLabel[selected.status] || selected.status}</span>
+                  <span className={`shrink-0 rounded-full px-3 py-1 text-13 font-medium ${statusClass[selected.status] || "bg-gray-100 text-gray-500"}`}>{getStatusLabel(selected)}</span>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-13">
+                  <DetailItem label="商品类型" value={selected.product_type === "preorder" ? "提前抢购" : "自动发货"} />
+                  <DetailItem label="金额" value={formatPrice(selected.total_amount)} emphasis />
+                  <DetailItem label="创建时间" value={selected.created_at || "-"} />
+                  <DetailItem label="支付时间" value={selected.paid_at || "-"} />
+                </div>
               </div>
 
-              <div className="grid gap-3 text-14">
-                <Info label="商品" value={selected.product_name} />
-                <Info label="联系方式" value={selected.contact_info} />
-                <Info label="数量" value={`${selected.quantity}`} />
-                <Info label="金额" value={formatPrice(selected.total_amount)} emphasis />
-                <Info label="创建时间" value={selected.created_at || "-"} />
-                <Info label="支付时间" value={selected.paid_at || "-"} />
-                <Info label="支付渠道" value={selected.pay_channel || "-"} />
-                <Info label="支付流水" value={selected.haozpay_seq_id || "-"} />
-              </div>
+              <DetailSection title="联系与支付">
+                <DetailItem label="联系方式" value={selected.contact_info} />
+                <DetailItem label="支付渠道" value={selected.pay_channel || "-"} />
+                <DetailItem label="支付流水" value={selected.haozpay_seq_id || "-"} wide />
+                <DetailItem label="退款状态" value={selected.refund_available ? "可发起退款" : selected.refund_unavailable_reason || "暂无退款操作"} />
+                <DetailItem label="检查时间" value={selected.refund_checked_at || "-"} />
+              </DetailSection>
 
-              <div>
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-15 font-bold text-[#111827]">卡密</h3>
-                  <button onClick={copyCodes} disabled={!selected.codes?.length} className="h-8 rounded-[10px] border border-[#dfe6ef] px-3 text-13 font-semibold text-primary-600 disabled:opacity-45">复制全部</button>
-                </div>
-                <div className="space-y-2">
-                  {selected.codes?.length ? selected.codes.map((code) => (
-                    <div key={code.id} className="break-all rounded-[12px] border border-[#dfe6ef] bg-[#fbfdff] p-3 font-mono text-13 text-[#293344]">
-                      {code.code_value}
+              {selected.product_type === "preorder" && (
+                <DetailSection title="发货内容">
+                  <DetailItem label="发货时间" value={selected.delivered_at || "-"} />
+                  <div className="col-span-2 rounded-[14px] border border-[#1f2d44] bg-[#111b2b] px-4 py-4">
+                    <p className="text-13 font-semibold text-[#7f8fa8]">发货信息</p>
+                    <p className="mt-3 whitespace-pre-wrap break-words font-mono text-14 leading-7 text-[#f4f7fb]">
+                      {selected.delivery_info?.trim() || "暂无发货内容"}
+                    </p>
+                  </div>
+                </DetailSection>
+              )}
+
+              {selected.product_type !== "preorder" && (
+              <DetailSection title="卡密">
+                <div className="col-span-2">
+                  <div className="mb-3 flex justify-end">
+                    <button onClick={copyCodes} disabled={!selected.codes?.length} className="h-8 rounded-[10px] border border-[#dfe6ef] px-3 text-13 font-semibold text-primary-600 disabled:opacity-45">复制全部</button>
+                  </div>
+                  <div className="space-y-2">
+                    {selected.codes?.length ? selected.codes.map((code) => (
+                      <div key={code.id} className="break-all rounded-[12px] border border-[#1f2d44] bg-[#111b2b] p-3 font-mono text-13 text-[#d8e1ec]">
+                        {code.code_value}
+                      </div>
+                    )) : (
+                      <div className="rounded-[12px] border border-dashed border-[#25364d] p-5 text-center text-14 text-[#8e99aa]">暂无卡密</div>
+                    )}
                     </div>
-                  )) : (
-                    <div className="rounded-[12px] border border-dashed border-[#dfe6ef] p-5 text-center text-14 text-[#8e99aa]">暂无卡密</div>
-                  )}
                 </div>
-              </div>
+              </DetailSection>
+              )}
 
-              <div className="flex gap-2 border-t border-[#edf1f6] pt-4">
-                <button onClick={() => setResendTarget(selected)} disabled={selected.status !== "paid"} className="h-10 flex-1 rounded-[12px] bg-primary-500 px-4 text-14 font-semibold text-white hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50">
+              <div className="flex gap-2 border-t border-[#25364d] pt-4">
+                {canDeliverOrder(selected) && (
+                  <button onClick={() => openDeliveryModal(selected)} className="h-10 flex-1 rounded-[12px] bg-success-500 px-4 text-14 font-semibold text-white hover:bg-success-600">
+                    发货
+                  </button>
+                )}
+                {selected.product_type !== "preorder" && (
+                <button onClick={() => setResendTarget(selected)} disabled={!canResendCodes(selected)} className="h-10 flex-1 rounded-[12px] bg-primary-500 px-4 text-14 font-semibold text-white hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50">
                   补发卡密
                 </button>
-                <button onClick={() => setRefundTarget(selected)} disabled={selected.status !== "paid"} className="h-10 flex-1 rounded-[12px] bg-danger-500 px-4 text-14 font-semibold text-white hover:bg-danger-600 disabled:cursor-not-allowed disabled:opacity-50">
-                  退款
-                </button>
+                )}
+                {canRefundOrder(selected) && (
+                  <button onClick={() => setRefundTarget(selected)} className="h-10 flex-1 rounded-[12px] bg-danger-500 px-4 text-14 font-semibold text-white hover:bg-danger-600">
+                    退款
+                  </button>
+                )}
               </div>
             </div>
-          )}
-        </aside>
-      </div>
+        )}
+      </Drawer>
+
+      <Modal open={!!deliveryTarget} onClose={() => { setDeliveryTarget(null); setDeliveryInfo("") }} title="填写发货信息" className="md:max-w-[520px]">
+        <div className="space-y-4">
+          <div className="rounded-[14px] bg-[#f8fbff] px-4 py-3 text-14 text-[#5d6675]">
+            <p className="font-semibold text-[#111827]">{deliveryTarget?.product_name} x{deliveryTarget?.quantity}</p>
+            <p className="mt-1 break-all">订单号：{deliveryTarget?.order_no}</p>
+          </div>
+          <label className="block space-y-2 text-14 font-medium text-[#3f495b]">
+            <span>发货信息</span>
+            <textarea
+              value={deliveryInfo}
+              onChange={(event) => setDeliveryInfo(event.target.value)}
+              maxLength={2000}
+              className="min-h-[150px] w-full resize-y rounded-[12px] border border-[#dfe6ef] bg-white px-4 py-3 text-14 leading-6 outline-none focus:border-primary-500"
+              placeholder="填写发货内容、兑换链接、账号信息、备注等"
+            />
+          </label>
+          <div className="flex justify-end gap-3 border-t border-[#edf1f6] pt-4">
+            <button type="button" onClick={() => { setDeliveryTarget(null); setDeliveryInfo("") }} className="h-10 rounded-[12px] border border-[#dfe6ef] px-5 text-14 font-semibold text-[#4f5b70] hover:bg-[#f8fbff]">
+              取消
+            </button>
+            <button type="button" onClick={deliver} disabled={delivering || !deliveryInfo.trim()} className="h-10 rounded-[12px] bg-success-500 px-6 text-14 font-semibold text-white hover:bg-success-600 disabled:cursor-not-allowed disabled:opacity-50">
+              {delivering ? "发货中" : "确认发货"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={!!resendTarget}
@@ -362,10 +526,21 @@ export default function AdminOrdersPage() {
       <ConfirmDialog
         open={!!refundTarget}
         onClose={() => setRefundTarget(null)}
-        onConfirm={refund}
+        onConfirm={requestRefund}
         title="确认退款"
-        message={refundTarget ? `确定对订单 ${refundTarget.order_no} 发起退款并回收卡密吗？` : ""}
+        message={getRefundMessage(refundTarget)}
         confirmText="退款"
+        danger
+        loading={refunding}
+      />
+
+      <ConfirmDialog
+        open={!!forceRefundTarget}
+        onClose={() => setForceRefundTarget(null)}
+        onConfirm={() => refund(forceRefundTarget, true)}
+        title="强制退款确认"
+        message={forceRefundTarget ? `商品已发出，是否对订单 ${forceRefundTarget.order_no} 强制退款？` : ""}
+        confirmText="强制退款"
         danger
         loading={refunding}
       />
@@ -373,11 +548,20 @@ export default function AdminOrdersPage() {
   )
 }
 
-function Info({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 rounded-[12px] bg-[#f8fbff] px-4 py-3">
-      <span className="shrink-0 text-[#8e99aa]">{label}</span>
-      <span className={`break-all text-right ${emphasis ? "font-bold text-danger-500" : "font-medium text-[#293344]"}`}>{value}</span>
+    <section className="rounded-[18px] border border-[#25364d] bg-[#0b1422] px-5 py-5">
+      <h3 className="text-15 font-bold text-[#f4f7fb]">{title}</h3>
+      <div className="mt-4 grid grid-cols-2 gap-3 text-14">{children}</div>
+    </section>
+  )
+}
+
+function DetailItem({ label, value, emphasis = false, wide = false }: { label: string; value: string; emphasis?: boolean; wide?: boolean }) {
+  return (
+    <div className={`rounded-[14px] border border-[#1f2d44] bg-[#111b2b] px-4 py-3 ${wide ? "col-span-2" : ""}`}>
+      <p className="text-12 font-semibold text-[#7f8fa8]">{label}</p>
+      <p className={`mt-2 break-words text-14 leading-6 ${emphasis ? "font-bold text-danger-500" : "font-semibold text-[#d8e1ec]"}`}>{value}</p>
     </div>
   )
 }

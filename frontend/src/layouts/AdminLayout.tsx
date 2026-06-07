@@ -75,7 +75,7 @@ export default function AdminLayout() {
           </button>
           <h1 className="text-18 font-semibold">小野卡铺管理</h1>
         </header>
-        <main className="mx-auto min-h-screen w-full max-w-[1760px] px-4 py-6 sm:px-6 md:px-8 md:py-10 2xl:px-10">
+        <main className="mx-auto min-h-screen w-full max-w-none px-4 py-6 sm:px-6 md:px-8 md:py-10 2xl:px-10">
           <Suspense
             fallback={
               <div className="flex min-h-[calc(100vh-80px)] items-center justify-center text-14 text-[#8e99aa]">

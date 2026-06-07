@@ -18,6 +18,8 @@ from app.models.category import Category
 
 router = APIRouter()
 _category_cache_build_lock = asyncio.Lock()
+PRODUCT_TYPE_AUTO_DELIVERY = "auto_delivery"
+PRODUCT_TYPE_PREORDER = "preorder"
 
 
 def _normalize_query(q: str | None) -> str:
@@ -25,18 +27,22 @@ def _normalize_query(q: str | None) -> str:
 
 
 def _product_payload(product: Product, category_name: str | None, stock: int) -> dict:
+    actual_stock = int(product.preorder_stock or 0) if (product.product_type or PRODUCT_TYPE_AUTO_DELIVERY) == PRODUCT_TYPE_PREORDER else int(stock or 0)
     return {
         "id": product.id,
         "category_id": product.category_id,
         "category_name": category_name or "",
         "name": product.name,
         "description": product.description,
+        "usage_instructions": product.usage_instructions,
         "cover_image": product.cover_image,
         "price": str(product.price),
+        "product_type": product.product_type or PRODUCT_TYPE_AUTO_DELIVERY,
+        "preorder_stock": product.preorder_stock or 0,
         "sort_order": product.sort_order,
         "sold_count": product.sold_count or 0,
-        "available_stock": stock or 0,
-        "is_on_sale": (stock or 0) > 0,
+        "available_stock": actual_stock,
+        "is_on_sale": actual_stock > 0,
     }
 
 
@@ -47,24 +53,31 @@ def _product_row_payload(
     category_name: str | None,
     name: str,
     description: str | None,
+    usage_instructions: str | None,
     cover_image: str | None,
     price,
+    product_type: str | None,
+    preorder_stock: int | None,
     sort_order: int,
     sold_count: int | None,
     stock: int,
 ) -> dict:
+    actual_stock = int(preorder_stock or 0) if (product_type or PRODUCT_TYPE_AUTO_DELIVERY) == PRODUCT_TYPE_PREORDER else int(stock or 0)
     return {
         "id": product_id,
         "category_id": category_id,
         "category_name": category_name or "",
         "name": name,
         "description": description,
+        "usage_instructions": usage_instructions,
         "cover_image": cover_image,
         "price": str(price),
+        "product_type": product_type or PRODUCT_TYPE_AUTO_DELIVERY,
+        "preorder_stock": preorder_stock or 0,
         "sort_order": sort_order,
         "sold_count": sold_count or 0,
-        "available_stock": stock or 0,
-        "is_on_sale": (stock or 0) > 0,
+        "available_stock": actual_stock,
+        "is_on_sale": actual_stock > 0,
     }
 
 
@@ -122,8 +135,11 @@ async def _build_category_product_cache(db: AsyncSession) -> dict[str, list[dict
             Category.name.label("category_name"),
             Product.name,
             Product.description,
+            Product.usage_instructions,
             Product.cover_image,
             Product.price,
+            Product.product_type,
+            Product.preorder_stock,
             Product.sort_order,
             Product.sold_count,
             func.coalesce(stock_subq.c.available_stock, 0).label("available_stock"),
@@ -142,8 +158,11 @@ async def _build_category_product_cache(db: AsyncSession) -> dict[str, list[dict
             category_name=row.category_name,
             name=row.name,
             description=row.description,
+            usage_instructions=row.usage_instructions,
             cover_image=row.cover_image,
             price=row.price,
+            product_type=row.product_type,
+            preorder_stock=row.preorder_stock,
             sort_order=row.sort_order,
             sold_count=row.sold_count,
             stock=row.available_stock or 0,
@@ -218,8 +237,11 @@ async def get_product_detail(
             Category.name.label("category_name"),
             Product.name,
             Product.description,
+            Product.usage_instructions,
             Product.cover_image,
             Product.price,
+            Product.product_type,
+            Product.preorder_stock,
             Product.sort_order,
             Product.sold_count,
             func.coalesce(stock_subq.c.available_stock, 0).label("available_stock"),
@@ -239,12 +261,15 @@ async def get_product_detail(
         "category_name": row.category_name or "",
         "name": row.name,
         "description": row.description,
+        "usage_instructions": row.usage_instructions,
         "cover_image": row.cover_image,
         "price": str(row.price),
+        "product_type": row.product_type or PRODUCT_TYPE_AUTO_DELIVERY,
+        "preorder_stock": row.preorder_stock or 0,
         "sort_order": row.sort_order,
         "sold_count": row.sold_count or 0,
-        "available_stock": row.available_stock or 0,
-        "is_on_sale": (row.available_stock or 0) > 0,
+        "available_stock": int(row.preorder_stock or 0) if (row.product_type or PRODUCT_TYPE_AUTO_DELIVERY) == PRODUCT_TYPE_PREORDER else (row.available_stock or 0),
+        "is_on_sale": (int(row.preorder_stock or 0) if (row.product_type or PRODUCT_TYPE_AUTO_DELIVERY) == PRODUCT_TYPE_PREORDER else (row.available_stock or 0)) > 0,
     }
 
     await cache_set_json(RedisKeys.product_detail(product_id), data, PUBLIC_CATALOG_TTL_SECONDS)

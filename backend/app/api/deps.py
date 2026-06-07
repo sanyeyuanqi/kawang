@@ -15,17 +15,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models.user import User
 from app.utils.security import decode_token
-from app.utils.redis import get_redis, RedisKeys
+from app.utils.redis import RedisKeys, redis_expire, redis_get, redis_incr, redis_ttl
 
 logger = logging.getLogger(__name__)
 _admin_access_cache: dict[int, tuple[float, bool]] = {}
 _ADMIN_ACCESS_CACHE_SECONDS = 15.0
 
 
+def prime_admin_access_cache(user_id: int, allowed: bool = True) -> None:
+    _admin_access_cache[user_id] = (perf_counter() + _ADMIN_ACCESS_CACHE_SECONDS, allowed)
+
+
 async def get_current_user(
     request: Request,
     authorization: str = Header(..., description="Bearer {token}"),
-    redis=Depends(get_redis),
 ) -> dict:
     """从 Header Authorization: Bearer {token} 中解码 JWT，
     校验 Redis 中该用户 token 是否有效，返回 payload 字典。
@@ -61,7 +64,7 @@ async def get_current_user(
         )
 
     redis_started_at = perf_counter()
-    stored_token = await redis.get(RedisKeys.auth_token(int(user_id)))
+    stored_token = await redis_get(RedisKeys.auth_token(int(user_id)))
     redis_get_ms = (perf_counter() - redis_started_at) * 1000
     if stored_token is None or stored_token != token:
         raise HTTPException(
@@ -84,7 +87,6 @@ async def get_current_user(
 
 async def get_current_user_optional(
     authorization: Optional[str] = Header(None, description="Bearer {token}"),
-    redis=Depends(get_redis),
 ) -> Optional[dict]:
     """可选的用户认证，Authorization header 不存在或无效时返回 None。
 
@@ -106,7 +108,7 @@ async def get_current_user_optional(
     if not user_id:
         return None
 
-    stored_token = await redis.get(RedisKeys.auth_token(int(user_id)))
+    stored_token = await redis_get(RedisKeys.auth_token(int(user_id)))
     if stored_token is None or stored_token != token:
         return None
 
@@ -159,7 +161,6 @@ async def get_current_admin(
 
 async def rate_limit_login(
     request: Request,
-    redis=Depends(get_redis),
 ) -> dict:
     """基于 IP 的登录频率限制。
 
@@ -176,13 +177,13 @@ async def rate_limit_login(
     client_ip = request.client.host if request.client else "unknown"
     redis_key = f"login_attempts:{client_ip}"
 
-    attempts = await redis.incr(redis_key)
+    attempts = await redis_incr(redis_key)
     if attempts == 1:
         # 第一次尝试，设置过期时间为 15 分钟
-        await redis.expire(redis_key, 900)
+        await redis_expire(redis_key, 900)
 
     if attempts >= 5:
-        ttl = await redis.ttl(redis_key)
+        ttl = await redis_ttl(redis_key)
         raise HTTPException(
             status_code=HTTP_429_TOO_MANY_REQUESTS,
             detail={

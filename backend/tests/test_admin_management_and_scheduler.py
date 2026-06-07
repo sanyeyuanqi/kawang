@@ -82,21 +82,34 @@ async def test_admin_category_product_and_code_key_crud(client: AsyncClient, adm
             "category_id": category_id,
             "name": f"测试商品-{suffix}",
             "description": "自动化测试商品",
+            "usage_instructions": "https://example.com/redeem",
             "price": "12.34",
             "sort_order": 1,
         },
         headers=headers,
     )
     assert product_response.status_code == 200
-    product_id = product_response.json()["data"]["id"]
+    product_payload = product_response.json()["data"]
+    assert product_payload["usage_instructions"] == "https://example.com/redeem"
+    product_id = product_payload["id"]
+
+    text_usage_response = await client.put(
+        f"/admin/products/{product_id}",
+        json={"usage_instructions": "复制卡密后按页面提示兑换"},
+        headers=headers,
+    )
+    assert text_usage_response.status_code == 200
+    assert text_usage_response.json()["data"]["usage_instructions"] == "复制卡密后按页面提示兑换"
 
     update_product_response = await client.put(
         f"/admin/products/{product_id}",
-        json={"price": "23.45"},
+        json={"price": "23.45", "usage_instructions": "https://example.com/help"},
         headers=headers,
     )
     assert update_product_response.status_code == 200
-    assert update_product_response.json()["data"]["price"] == "23.45"
+    updated_product_payload = update_product_response.json()["data"]
+    assert updated_product_payload["price"] == "23.45"
+    assert updated_product_payload["usage_instructions"] == "https://example.com/help"
 
     import_response = await client.post(
         "/admin/code-keys/import",

@@ -1,6 +1,6 @@
 import logging
 import json
-from time import perf_counter
+from time import monotonic, perf_counter
 from datetime import datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, Request, HTTPException, Query, WebSocket, WebSocketDisconnect
@@ -14,16 +14,24 @@ from app.services.code_service import CodeService, InsufficientStockError
 from app.services.payment_events import payment_events
 from app.services.payment_service import PaymentService
 from app.services.product_sales import ProductSalesService
-from app.utils.haozpay_client import haozpay_client
+from app.services.catalog_cache import invalidate_catalog_cache
+from app.utils.haozpay_client import PaymentException, haozpay_client
 from app.models.order import Order, OrderStatus
 from app.models.code_key import CodeKey, CodeKeyStatus
+from app.models.product import Product
 from app.config import settings
 from app.api.deps import get_current_user, get_current_user_optional
+from app.api.v1.admin.orders import clear_admin_order_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 order_service = OrderService()
 payment_service = PaymentService()
+PRODUCT_TYPE_PREORDER = "preorder"
+PAY_INFO_CACHE_TTL_SECONDS = 600
+USER_ORDER_CACHE_TTL_SECONDS = 10
+_pay_info_cache: dict[str, tuple[float, dict]] = {}
+_user_order_cache: dict[int, dict[tuple[int, str | None, int], tuple[float, dict]]] = {}
 
 
 class TimingTrace:
@@ -65,33 +73,63 @@ ORDER_LIST_COLUMNS = (
     Order.status,
     Order.total_amount,
     Order.product_name,
+    Order.product_type,
     Order.quantity,
     Order.contact_info,
     Order.paid_at,
+    Order.delivered_at,
     Order.created_at,
 )
 
 
 async def _order_payload(db: AsyncSession, order: Order, include_codes: bool = True) -> dict:
     codes = []
-    if include_codes and order.status == OrderStatus.PAID:
+    if include_codes and order.status in (OrderStatus.PAID, OrderStatus.DELIVERED) and order.product_type != PRODUCT_TYPE_PREORDER:
         code_stmt = select(CodeKey).where(CodeKey.order_id == order.id, CodeKey.status == CodeKeyStatus.ASSIGNED)
         codes = [{"id": c.id, "code_value": c.code_value} for c in (await db.execute(code_stmt)).scalars().all()]
+    usage_instructions = await db.scalar(
+        select(Product.usage_instructions).where(Product.id == order.product_id, Product.is_deleted == False)
+    )
 
     return {
         "order_no": order.order_no,
         "status": _status_value(order.status),
         "total_amount": str(order.total_amount),
         "product_name": order.product_name,
+        "product_type": order.product_type or "auto_delivery",
         "quantity": order.quantity,
         "contact_info": order.contact_info,
+        "usage_instructions": usage_instructions,
         "codes": codes,
         "paid_at": order.paid_at.strftime("%Y-%m-%d %H:%M:%S") if order.paid_at else None,
+        "delivered_at": order.delivered_at.strftime("%Y-%m-%d %H:%M:%S") if order.delivered_at else None,
+        "delivery_info": order.delivery_info,
         "created_at": order.created_at.strftime("%Y-%m-%d %H:%M:%S") if order.created_at else None,
     }
 
 
 async def _mark_order_paid(db: AsyncSession, order: Order, pay_channel: str = "") -> int:
+    is_preorder = (order.product_type or "auto_delivery") == PRODUCT_TYPE_PREORDER
+    if is_preorder:
+        if order.status == OrderStatus.CANCELLED:
+            product = await db.scalar(select(Product).where(Product.id == order.product_id).with_for_update())
+            if product is None or product.is_deleted:
+                raise InsufficientStockError("商品不存在，无法恢复订单")
+            if int(product.preorder_stock or 0) < order.quantity:
+                raise InsufficientStockError(f"库存不足，需要 {order.quantity} 件，可用 {int(product.preorder_stock or 0)} 件")
+            product.preorder_stock = int(product.preorder_stock or 0) - order.quantity
+            await invalidate_catalog_cache(product_ids=[product.id], clear_products=True, clear_stock=True)
+
+        now = datetime.now()
+        order.status = OrderStatus.PAID
+        order.paid_at = now
+        order.cancelled_at = None
+        if pay_channel:
+            order.pay_channel = pay_channel
+        db.add(order)
+        await ProductSalesService.increment_sold_count(db, order.product_id, order.quantity)
+        return 0
+
     assigned_count = await db.scalar(select(func.count(CodeKey.id)).where(
         CodeKey.order_id == order.id,
         CodeKey.status == CodeKeyStatus.ASSIGNED,
@@ -125,10 +163,12 @@ def _order_list_payload(row) -> dict:
         "status": _status_value(row.status),
         "total_amount": str(row.total_amount),
         "product_name": row.product_name,
+        "product_type": row.product_type or "auto_delivery",
         "quantity": row.quantity,
         "contact_info": row.contact_info,
         "codes": [],
         "paid_at": row.paid_at.strftime("%Y-%m-%d %H:%M:%S") if row.paid_at else None,
+        "delivered_at": row.delivered_at.strftime("%Y-%m-%d %H:%M:%S") if row.delivered_at else None,
         "created_at": row.created_at.strftime("%Y-%m-%d %H:%M:%S") if row.created_at else None,
     }
 
@@ -140,6 +180,42 @@ def _order_status_event(order: Order) -> dict:
         "status": _status_value(order.status),
         "paid_at": order.paid_at.strftime("%Y-%m-%d %H:%M:%S") if order.paid_at else None,
     }
+
+
+def _cached_pay_info(order_no: str) -> dict | None:
+    item = _pay_info_cache.get(order_no)
+    if item is None:
+        return None
+    expires_at, value = item
+    if expires_at <= monotonic():
+        _pay_info_cache.pop(order_no, None)
+        return None
+    return value
+
+
+def _set_cached_pay_info(order_no: str, value: dict) -> None:
+    _pay_info_cache[order_no] = (monotonic() + PAY_INFO_CACHE_TTL_SECONDS, value)
+
+
+def _get_cached_user_orders(user_id: int, key: tuple[int, str | None, int]) -> dict | None:
+    item = _user_order_cache.get(user_id, {}).get(key)
+    if item is None:
+        return None
+    expires_at, value = item
+    if expires_at <= monotonic():
+        _user_order_cache.get(user_id, {}).pop(key, None)
+        return None
+    return value
+
+
+def _set_cached_user_orders(user_id: int, key: tuple[int, str | None, int], value: dict) -> None:
+    bucket = _user_order_cache.setdefault(user_id, {})
+    bucket[key] = (monotonic() + USER_ORDER_CACHE_TTL_SECONDS, value)
+
+
+def _clear_user_order_cache(user_id: int | None) -> None:
+    if user_id is not None:
+        _user_order_cache.pop(user_id, None)
 
 
 @router.post("/orders")
@@ -155,7 +231,112 @@ async def create_order(
         user_id=int(current_user["sub"]) if current_user else None,
         notify_url=notify_url,
     )
+    pay_info = result.get("pay_info") if isinstance(result, dict) else None
+    order_no = result.get("order_no") if isinstance(result, dict) else None
+    if order_no and isinstance(pay_info, dict):
+        _set_cached_pay_info(order_no, pay_info)
+    clear_admin_order_cache()
+    _clear_user_order_cache(int(current_user["sub"]) if current_user else None)
     return {"code": 200, "msg": "success", "data": result}
+
+
+@router.get("/orders/{order_no}/pay-info")
+async def get_order_pay_info(order_no: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(Order).where(Order.order_no == order_no)
+    order = await db.scalar(stmt)
+    if not order:
+        raise HTTPException(status_code=404, detail={"code": 404, "msg": "订单不存在", "data": None})
+    if order.status != OrderStatus.PENDING:
+        raise HTTPException(status_code=400, detail={"code": 400, "msg": "订单不是待支付状态", "data": None})
+
+    cached = _cached_pay_info(order.order_no)
+    if cached is not None:
+        return {"code": 200, "msg": "success", "data": cached}
+
+    notify_url = f"{settings.SITE_URL}/api/v1/orders/callback"
+    amount_cents = int(order.total_amount * 100)
+    try:
+        pay_info = await order_service.payment_service.create_payment(
+            order_no=order.order_no,
+            order_title=order.product_name,
+            amount=amount_cents,
+            pay_type=0,
+            notify_url=notify_url,
+        )
+    except PaymentException as e:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": 502, "msg": f"支付网关调用失败: {e.message}", "data": None},
+        )
+
+    order.haozpay_seq_id = pay_info.haozpay_seq_id
+    db.add(order)
+    await db.commit()
+    data = {
+        "pay_type": pay_info.pay_type,
+        "html_form": pay_info.html_form,
+        "qr_url": pay_info.qr_url,
+        "qr_content": pay_info.qr_content,
+        "haozpay_seq_id": pay_info.haozpay_seq_id,
+    }
+    _set_cached_pay_info(order.order_no, data)
+    return {"code": 200, "msg": "success", "data": data}
+
+
+@router.post("/orders/{order_no}/cancel")
+async def cancel_order(order_no: str, request: Request, db: AsyncSession = Depends(get_db)):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    proof = str(body.get("contact_info", "")).strip()
+
+    result = await db.execute(select(Order).where(Order.order_no == order_no).with_for_update())
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail={"code": 404, "msg": "订单不存在", "data": None})
+    if not proof or proof not in (order.order_no, order.contact_info):
+        raise HTTPException(status_code=403, detail={"code": 403, "msg": "订单信息不匹配", "data": None})
+    if order.status != OrderStatus.PENDING:
+        raise HTTPException(status_code=400, detail={"code": 400, "msg": "只有待支付订单可以取消", "data": None})
+
+    order.status = OrderStatus.CANCELLED
+    order.cancelled_at = datetime.now()
+    if (order.product_type or "auto_delivery") == PRODUCT_TYPE_PREORDER:
+        product = await db.scalar(select(Product).where(Product.id == order.product_id).with_for_update())
+        if product is not None:
+            product.preorder_stock = int(product.preorder_stock or 0) + order.quantity
+            await invalidate_catalog_cache(product_ids=[product.id], clear_products=True, clear_stock=True)
+    else:
+        await CodeService.release_codes(db, order.id)
+    db.add(order)
+    await db.commit()
+    clear_admin_order_cache()
+    _clear_user_order_cache(order.user_id)
+    await payment_events.publish(order.order_no, _order_status_event(order))
+    return {"code": 200, "msg": "success", "data": await _order_payload(db, order, include_codes=False)}
+
+
+@router.delete("/orders/{order_no}")
+async def delete_my_order(
+    order_no: str,
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user_id = int(current_user["sub"])
+    result = await db.execute(
+        select(Order).where(Order.order_no == order_no, Order.user_id == user_id).with_for_update()
+    )
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail={"code": 404, "msg": "订单不存在", "data": None})
+    if order.user_deleted_at is None:
+        order.user_deleted_at = datetime.now()
+        db.add(order)
+        await db.commit()
+        clear_admin_order_cache()
+        _clear_user_order_cache(user_id)
+    return {"code": 200, "msg": "success", "data": {"order_no": order.order_no}}
 
 
 @router.post("/orders/callback")
@@ -210,6 +391,8 @@ async def payment_callback(request: Request, db: AsyncSession = Depends(get_db))
         return PlainTextResponse("fail")
     logger.info(f"[callback] {order_no} paid, confirmed {confirmed} codes")
     await db.commit()
+    clear_admin_order_cache()
+    _clear_user_order_cache(order.user_id)
     await payment_events.publish(order.order_no, _order_status_event(order))
 
     return PlainTextResponse("success")
@@ -247,6 +430,8 @@ async def get_order_result(order_no: str, db: AsyncSession = Depends(get_db)):
                             logger.error("[payment-query] %s paid but stock recovery failed: %s", order.order_no, exc.message)
                         else:
                             await db.commit()
+                            clear_admin_order_cache()
+                            _clear_user_order_cache(locked.user_id)
                             order = locked
                             logger.info("[payment-query] %s paid, confirmed %s codes", order.order_no, confirmed)
                             await payment_events.publish(order.order_no, _order_status_event(order))
@@ -288,13 +473,17 @@ async def get_my_orders(
     trace = TimingTrace("orders.mine")
     user_id = int(current_user["sub"])
     page_size = min(limit, 10)
+    cache_key = (after_id, after_created_at, page_size)
+    cached = _get_cached_user_orders(user_id, cache_key)
+    if cached is not None:
+        return cached
     trace.mark("auth_dependency_done")
 
     await db.connection()
     trace.mark("db_connection_checkout")
 
     cursor_created_at = _parse_cursor_datetime(after_created_at)
-    filters = [Order.user_id == user_id]
+    filters = [Order.user_id == user_id, Order.user_deleted_at.is_(None)]
     if after_id > 0 and cursor_created_at is not None:
         filters.append(or_(Order.created_at < cursor_created_at, and_(Order.created_at == cursor_created_at, Order.id < after_id)))
     elif after_id > 0:
@@ -348,11 +537,13 @@ async def get_my_orders(
         trace.summary(),
     )
 
-    return {
+    response = {
         "code": 200,
         "msg": "success",
         "data": data,
     }
+    _set_cached_user_orders(user_id, cache_key, response)
+    return response
 
 
 @router.post("/orders/query")

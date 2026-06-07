@@ -9,12 +9,14 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin
+from app.api.v1.admin.products import clear_admin_product_cache
 from app.database import get_db
 from app.models.category import Category
 from app.models.code_key import CODE_VALUE_MAX_LENGTH, CodeKey, CodeKeyStatus
 from app.models.order import Order
 from app.models.product import Product
 from app.services.catalog_cache import STOCK_CACHE_TTL_SECONDS, cache_get_json, cache_set_json, invalidate_catalog_cache
+from app.utils.db_indexes import mysql_index_exists
 from app.utils.redis import RedisKeys
 
 router = APIRouter()
@@ -84,7 +86,8 @@ async def stock_summary(
     if cached is not None:
         return {"code": 200, "msg": "success", "data": cached}
 
-    code_summary = (
+    has_stock_summary_index = await mysql_index_exists(db, "code_key", "ix_code_key_deleted_product_status_created")
+    code_summary_stmt = (
         select(
             CodeKey.product_id.label("product_id"),
             func.sum(case((CodeKey.status == CodeKeyStatus.UNUSED, 1), else_=0)).label("unused_count"),
@@ -94,8 +97,10 @@ async def stock_summary(
         )
         .where(CodeKey.is_deleted == False)
         .group_by(CodeKey.product_id)
-        .subquery()
     )
+    if has_stock_summary_index:
+        code_summary_stmt = code_summary_stmt.with_hint(CodeKey, "FORCE INDEX (ix_code_key_deleted_product_status_created)", dialect_name="mysql")
+    code_summary = code_summary_stmt.subquery()
     stmt = (
         select(
             Product.id.label("product_id"),
@@ -116,16 +121,17 @@ async def stock_summary(
     )
     rows = await db.execute(stmt)
     total = (await db.execute(select(func.count(Product.id)).where(Product.is_deleted == False))).scalar() or 0
-    stats_row = (
-        await db.execute(
-            select(
-                func.coalesce(func.sum(case((CodeKey.status == CodeKeyStatus.UNUSED, 1), else_=0)), 0).label("unused_count"),
-                func.coalesce(func.sum(case((CodeKey.status == CodeKeyStatus.ASSIGNED, 1), else_=0)), 0).label("assigned_count"),
-                func.count(CodeKey.id).label("total_count"),
-            )
-            .where(CodeKey.is_deleted == False)
+    stats_stmt = (
+        select(
+            func.coalesce(func.sum(case((CodeKey.status == CodeKeyStatus.UNUSED, 1), else_=0)), 0).label("unused_count"),
+            func.coalesce(func.sum(case((CodeKey.status == CodeKeyStatus.ASSIGNED, 1), else_=0)), 0).label("assigned_count"),
+            func.count(CodeKey.id).label("total_count"),
         )
-    ).one()
+        .where(CodeKey.is_deleted == False)
+    )
+    if has_stock_summary_index:
+        stats_stmt = stats_stmt.with_hint(CodeKey, "FORCE INDEX (ix_code_key_deleted_product_status_created)", dialect_name="mysql")
+    stats_row = (await db.execute(stats_stmt)).one()
     data = {
         "items": [
             {
@@ -174,6 +180,12 @@ async def list_codes(
     if status:
         stmt = stmt.where(CodeKey.status == status)
         count_stmt = count_stmt.where(CodeKey.status == status)
+        code_index = "ix_code_key_product_status_deleted"
+    else:
+        code_index = "ix_code_key_product_deleted_id"
+    if await mysql_index_exists(db, "code_key", code_index):
+        stmt = stmt.with_hint(CodeKey, f"FORCE INDEX ({code_index})", dialect_name="mysql")
+        count_stmt = count_stmt.with_hint(CodeKey, f"FORCE INDEX ({code_index})", dialect_name="mysql")
     rows = (await db.execute(stmt.order_by(CodeKey.id.desc()).offset(offset).limit(limit))).all()
     total = (await db.execute(count_stmt)).scalar() or 0
     return {"code": 200, "msg": "success", "data": {"items": [_code_dict(code, contact_info, product_name) for code, contact_info, product_name in rows], "total": total, "offset": offset, "limit": limit}}
@@ -196,6 +208,7 @@ async def update_code(
             _error(400, 400, "已发卡卡密不能手动改为其他状态")
         code.status = payload.status
     await db.flush()
+    clear_admin_product_cache()
     await invalidate_catalog_cache(product_ids=[code.product_id], clear_products=True, clear_stock=True)
     return {"code": 200, "msg": "success", "data": _code_dict(code)}
 
@@ -214,6 +227,7 @@ async def batch_delete_codes(payload: CodeBatchDeletePayload, _: dict = Depends(
     for code in codes:
         code.is_deleted = True
     await db.flush()
+    clear_admin_product_cache()
     await invalidate_catalog_cache(product_ids=product_ids, clear_products=True, clear_stock=True)
     return {"code": 200, "msg": "卡密已删除", "data": {"deleted_count": len(codes)}}
 
@@ -228,6 +242,7 @@ async def delete_code(code_id: int, _: dict = Depends(get_current_admin), db: As
     product_id = code.product_id
     code.is_deleted = True
     await db.flush()
+    clear_admin_product_cache()
     await invalidate_catalog_cache(product_ids=[product_id], clear_products=True, clear_stock=True)
     return {"code": 200, "msg": "卡密已删除", "data": None}
 
@@ -254,6 +269,7 @@ async def import_codes(payload: ImportCodesPayload, _: dict = Depends(get_curren
     for value in values:
         db.add(CodeKey(product_id=payload.product_id, code_value=value, status=CodeKeyStatus.UNUSED))
     await db.flush()
+    clear_admin_product_cache()
     await invalidate_catalog_cache(product_ids=[payload.product_id], clear_products=True, clear_stock=True)
     return {"code": 200, "msg": "success", "data": {"imported_count": len(values), "message": f"已导入 {len(values)} 张卡密"}}
 
@@ -277,6 +293,7 @@ async def update_stock_record(code_id: int, payload: CodeStockUpdatePayload, _: 
         )
         affected_product_ids.append(target.id)
     await db.flush()
+    clear_admin_product_cache()
     await invalidate_catalog_cache(product_ids=affected_product_ids, clear_products=True, clear_stock=True)
     return {"code": 200, "msg": "success", "data": None}
 
@@ -286,9 +303,13 @@ async def delete_stock_record(code_id: int, _: dict = Depends(get_current_admin)
     product = (await db.execute(select(Product).where(Product.id == code_id, Product.is_deleted == False))).scalar_one_or_none()
     if product is None:
         _error(404, 404, "库存记录不存在")
-    unused_codes = (await db.execute(select(CodeKey).where(CodeKey.product_id == code_id, CodeKey.status == CodeKeyStatus.UNUSED, CodeKey.is_deleted == False))).scalars().all()
+    unused_stmt = select(CodeKey).where(CodeKey.product_id == code_id, CodeKey.status == CodeKeyStatus.UNUSED, CodeKey.is_deleted == False)
+    if await mysql_index_exists(db, "code_key", "ix_code_key_product_status_deleted"):
+        unused_stmt = unused_stmt.with_hint(CodeKey, "FORCE INDEX (ix_code_key_product_status_deleted)", dialect_name="mysql")
+    unused_codes = (await db.execute(unused_stmt)).scalars().all()
     for code in unused_codes:
         code.is_deleted = True
     await db.flush()
+    clear_admin_product_cache()
     await invalidate_catalog_cache(product_ids=[code_id], clear_products=True, clear_stock=True)
     return {"code": 200, "msg": "库存记录已删除", "data": {"deleted_count": len(unused_codes)}}

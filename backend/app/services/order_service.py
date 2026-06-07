@@ -11,6 +11,7 @@ from app.models.order import Order, OrderStatus
 from app.services.code_service import CodeService, InsufficientStockError
 from app.services.payment_service import PaymentService
 from app.services.product_sales import ProductSalesService
+from app.services.catalog_cache import invalidate_catalog_cache
 from app.utils.haozpay_client import PaymentException
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ ORDER_NO_PREFIX = "KW"
 ORDER_NO_RANDOM_LENGTH = 22
 ORDER_NO_ALPHABET = string.ascii_uppercase + string.digits
 ORDER_NO_GENERATION_ATTEMPTS = 10
+PRODUCT_TYPE_PREORDER = "preorder"
 
 
 def generate_order_no() -> str:
@@ -46,13 +48,15 @@ class OrderService:
         contact_info: str, pay_type: int = 0, user_id: int | None = None,
         notify_url: str = "", return_url: str | None = None,
     ) -> dict:
-        stmt = select(Product).where(Product.id == product_id, Product.is_deleted == False)
+        stmt = select(Product).where(Product.id == product_id, Product.is_deleted == False).with_for_update()
         result = await db.execute(stmt)
         product = result.scalar_one_or_none()
         if not product:
             raise HTTPException(status_code=404, detail={"code": 404, "msg": "商品不存在", "data": None})
 
-        available = await CodeService.count_available(db, product_id)
+        product_type = product.product_type or "auto_delivery"
+        is_preorder = product_type == PRODUCT_TYPE_PREORDER
+        available = int(product.preorder_stock or 0) if is_preorder else await CodeService.count_available(db, product_id)
         if available < quantity:
             raise HTTPException(status_code=400, detail={
                 "code": 400, "msg": f"库存不足，当前可用 {available} 张", "data": None})
@@ -63,6 +67,7 @@ class OrderService:
         order = Order(
             order_no=order_no, product_id=product_id,
             product_name=product.name, product_price=product.price,
+            product_type=product_type,
             quantity=quantity, total_amount=total_amount,
             user_id=user_id, contact_info=contact_info,
             status=OrderStatus.PENDING,
@@ -70,10 +75,14 @@ class OrderService:
         db.add(order)
         await db.flush()
 
-        try:
-            await CodeService.reserve_codes(db, product_id, quantity, order.id)
-        except InsufficientStockError as e:
-            raise HTTPException(status_code=400, detail={"code": 400, "msg": e.message, "data": None})
+        if is_preorder:
+            product.preorder_stock = max(int(product.preorder_stock or 0) - quantity, 0)
+            await invalidate_catalog_cache(product_ids=[product.id], clear_products=True, clear_stock=True)
+        else:
+            try:
+                await CodeService.reserve_codes(db, product_id, quantity, order.id)
+            except InsufficientStockError as e:
+                raise HTTPException(status_code=400, detail={"code": 400, "msg": e.message, "data": None})
 
         amount_cents = int(total_amount * 100)
         if amount_cents < 2 or total_amount < MIN_GATEWAY_AMOUNT:
@@ -82,7 +91,8 @@ class OrderService:
             order.paid_at = now
             order.pay_channel = "auto_paid"
             order.haozpay_seq_id = f"AUTO-{order_no}"
-            await CodeService.confirm_codes(db, order.id)
+            if not is_preorder:
+                await CodeService.confirm_codes(db, order.id)
             await ProductSalesService.increment_sold_count(db, order.product_id, order.quantity)
             return {
                 "order_no": order_no,
@@ -105,7 +115,11 @@ class OrderService:
             )
             order.haozpay_seq_id = pay_info.haozpay_seq_id
         except PaymentException as e:
-            await CodeService.release_codes(db, order.id)
+            if is_preorder:
+                product.preorder_stock = int(product.preorder_stock or 0) + quantity
+                await invalidate_catalog_cache(product_ids=[product.id], clear_products=True, clear_stock=True)
+            else:
+                await CodeService.release_codes(db, order.id)
             raise HTTPException(status_code=502, detail={
                 "code": 502, "msg": f"支付网关调用失败: {e.message}", "data": None})
 

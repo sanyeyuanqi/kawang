@@ -17,6 +17,11 @@ function notifyRefreshWaiters(token: string | null) {
   refreshWaiters = []
 }
 
+function isAdminRequest(url?: string) {
+  if (!url) return false
+  return url.startsWith("/admin") || url.includes("/api/v1/admin")
+}
+
 api.interceptors.request.use((config) => {
   const token = getToken()
   if (token && config.headers) {
@@ -69,7 +74,7 @@ api.interceptors.response.use(
       }
     }
 
-    if (err.response?.status === 401) {
+    if (err.response?.status === 401 || (err.response?.status === 403 && isAdminRequest(originalRequest?.url))) {
       clearToken()
       if (window.location.pathname !== "/login") {
         window.location.href = "/login?redirect=" + encodeURIComponent(window.location.pathname + window.location.search)
@@ -86,9 +91,12 @@ function getStorage(kind: AuthStorageKind): Storage {
 }
 
 function getActiveStorageKind(): AuthStorageKind {
+  const savedKind = localStorage.getItem(AUTH_STORAGE_KEY)
+  if (savedKind === "session" && sessionStorage.getItem("token")) return "session"
+  if (savedKind === "local" && localStorage.getItem("token")) return "local"
   if (localStorage.getItem("token")) return "local"
   if (sessionStorage.getItem("token")) return "session"
-  return localStorage.getItem(AUTH_STORAGE_KEY) === "session" ? "session" : "local"
+  return savedKind === "session" ? "session" : "local"
 }
 
 function clearStorage(storage: Storage) {
@@ -122,7 +130,7 @@ export function setStoredUser(user: unknown, remember?: boolean) {
   storage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
 }
 export function getStoredUser<T = unknown>(): T | null {
-  const raw = localStorage.getItem(USER_STORAGE_KEY) || sessionStorage.getItem(USER_STORAGE_KEY)
+  const raw = getStorage(getActiveStorageKind()).getItem(USER_STORAGE_KEY)
   if (!raw) return null
   try {
     return JSON.parse(raw) as T
@@ -138,8 +146,10 @@ export function clearToken() {
   localStorage.removeItem(AUTH_STORAGE_KEY)
 }
 export function getToken(): string | null {
-  return localStorage.getItem("token") || sessionStorage.getItem("token")
+  const activeStorage = getStorage(getActiveStorageKind())
+  return activeStorage.getItem("token")
 }
 export function getRefreshToken(): string | null {
-  return localStorage.getItem("refresh_token") || sessionStorage.getItem("refresh_token")
+  const activeStorage = getStorage(getActiveStorageKind())
+  return activeStorage.getItem("refresh_token")
 }

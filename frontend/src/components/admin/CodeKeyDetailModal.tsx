@@ -168,7 +168,7 @@ export default function CodeKeyDetailModal({
             </thead>
             <tbody className="code-key-table-body divide-y divide-[#edf1f6] text-[#293344]">
               {loading && Array.from({ length: 4 }).map((_, index) => (
-                <tr key={index}><td colSpan={6} className="px-4 py-4"><div className="h-9 animate-pulse rounded-[10px] bg-[#f1f5fb]" /></td></tr>
+                <tr key={index}><td colSpan={6} className="px-4 py-4"><div className="h-9 animate-pulse rounded-[10px] bg-[#1a2638]" /></td></tr>
               ))}
               {!loading && codes.map((code) => {
                 const isEditing = editingId === code.id
