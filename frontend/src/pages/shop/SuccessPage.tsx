@@ -67,6 +67,11 @@ export default function SuccessPage() {
     }
   }
 
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate("/orders/query")
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -89,8 +94,17 @@ export default function SuccessPage() {
   return (
     <>
       <div className="success-mobile-shell mx-auto min-h-[calc(100svh-72px)] w-full max-w-[430px] bg-[#f8fafc] pb-[120px] md:hidden">
-        <section className="relative h-[251px] bg-[#0e4beb] px-[30px] pt-[82px] text-white">
-          <div className="absolute right-[39px] top-[83px] grid size-[60px] place-items-center rounded-full bg-white">
+        <section className="success-mobile-hero relative h-[251px] bg-[#0e4beb] px-[30px] pt-[82px] text-white">
+          <button
+            type="button"
+            onClick={goBack}
+            className="success-mobile-back absolute left-5 top-5 grid size-10 place-items-center rounded-full border border-white/20 bg-[#1748b7]/80 text-white shadow-none backdrop-blur-sm"
+            aria-label={st("返回")}
+            title={st("返回")}
+          >
+            <BackIcon className="size-5" />
+          </button>
+          <div className="success-mobile-check absolute right-[39px] top-[83px] grid size-[60px] place-items-center rounded-full bg-white">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
               <path d="M7 12.5l3 3 7-7" stroke="#0e4beb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -100,18 +114,18 @@ export default function SuccessPage() {
         </section>
 
         <main className="relative z-10 -mt-[53px] px-[30px]">
-          <section className="rounded-[22px] border border-[#dfe5ed] bg-white px-[27px] pb-[67px] pt-[39px] shadow-[0_18px_42px_-20px_rgba(10,18,31,0.22)]">
+          <section className="success-mobile-card rounded-[22px] border border-[#dfe5ed] bg-white px-[27px] pb-[67px] pt-[39px] shadow-[0_18px_42px_-20px_rgba(10,18,31,0.22)]">
             <div className="mb-[28px] flex items-center justify-between gap-4">
-              <h2 className="text-[24px] font-bold leading-none text-[#0e131e]">{st("你的卡密")}</h2>
-              <span className="shrink-0 rounded-full bg-[#e8faf4] px-[18px] py-[9px] text-[14px] font-medium leading-none text-success-500">{st("已发卡")}</span>
+              <h2 className="success-mobile-title text-[24px] font-bold leading-none text-[#0e131e]">{st("你的卡密")}</h2>
+              <span className="success-mobile-status shrink-0 rounded-full bg-[#e8faf4] px-[18px] py-[9px] text-[14px] font-medium leading-none text-success-500">{st("已发卡")}</span>
             </div>
 
-            <div className="rounded-[14px] border border-[#d8e1ec] bg-[#f8fafc] px-4 py-[35px]">
+            <div className="success-mobile-code-panel rounded-[14px] border border-[#d8e1ec] bg-[#f8fafc] px-4 py-[35px]">
               {order.codes.length > 0 ? (
                 <div className="space-y-4">
                   {order.codes.map((code) => (
-                    <div key={code.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-[#d8e1ec] bg-white px-4 py-3">
-                      <p className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[17px] font-bold leading-6 text-[#121722]">
+                    <div key={code.id} className="success-mobile-code-row grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[12px] border border-[#d8e1ec] bg-white px-4 py-3">
+                      <p className="success-mobile-code-value min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[17px] font-bold leading-6 text-[#121722]">
                         {code.code_value}
                       </p>
                       <button
@@ -140,9 +154,9 @@ export default function SuccessPage() {
             </button>
           </section>
 
-          <section className="mt-[45px]">
-            <h3 className="mb-[19px] text-[22px] font-bold leading-none text-[#0e131e]">{st("使用说明")}</h3>
-            <ol className="space-y-[22px] rounded-[20px] border border-[#dfe5ed] bg-white px-[27px] py-[31px] text-[17px] leading-none text-[#0e131e]">
+          <section className="success-mobile-instructions mt-[45px]">
+            <h3 className="success-mobile-instructions-title mb-[19px] text-[22px] font-bold leading-none text-[#0e131e]">{st("使用说明")}</h3>
+            <ol className="success-mobile-instructions-list space-y-[22px] rounded-[20px] border border-[#dfe5ed] bg-white px-[27px] py-[31px] text-[17px] leading-none text-[#0e131e]">
               <li>{st("1. 打开对应平台兑换入口")}</li>
               <li>{st("2. 输入上方卡密完成兑换")}</li>
               <li>{st("3. 有问题可凭订单号联系客服")}</li>
@@ -154,6 +168,14 @@ export default function SuccessPage() {
       <div className="success-web-shell hidden h-[calc(100vh-clamp(54px,3.38vw,96px))] overflow-hidden bg-[#f4f7fb] px-6 py-[clamp(14px,1.1vw,22px)] md:block">
         <main className="figma-web-container flex h-full min-h-0 flex-col">
           <section className="success-web-card flex min-h-0 flex-1 flex-col rounded-[28px] border border-[#dfe5ed] bg-white px-[clamp(58px,5vw,98px)] py-[clamp(18px,1.35vw,24px)] shadow-[0_28px_70px_-48px_rgba(10,18,31,0.42)]">
+            <button
+              type="button"
+              onClick={goBack}
+              className="success-back-button mb-4 inline-flex h-10 w-fit items-center gap-2 rounded-[12px] border border-[#dfe5ed] bg-white px-4 text-[14px] font-bold text-[#3f495b] transition hover:-translate-y-0.5"
+            >
+              <BackIcon className="size-4" />
+              {st("返回")}
+            </button>
             <div className="success-product-panel rounded-[20px] border border-[#cfe0f4] bg-[#f8fbff] p-4">
               <div className="success-product-grid items-start">
                 <div className="success-card-art relative overflow-hidden rounded-[14px] bg-[#2f64e8]">
@@ -174,14 +196,16 @@ export default function SuccessPage() {
                     {st("订单已自动发卡，请及时保存卡密")}
                     <span className="ml-2">{st("数量")}：{order.quantity} {st("件")}</span>
                   </p>
-                  <div className="success-order-meta-grid mt-4 grid gap-3 text-[12px] text-[#6b7990]">
-                    <div className="success-order-meta rounded-[12px] border border-[#dfe5ed] bg-white px-4 py-2.5">
-                      <span>{st("订单号")}</span>
-                      <strong className="ml-2 font-mono text-[#0e131e]">{order.order_no}</strong>
+                  <div className="success-order-meta-grid mt-4 grid gap-3 text-[#6b7990]">
+                    <div className="success-order-meta success-order-no flex min-w-0 items-center gap-2 rounded-[12px] border border-[#dfe5ed] bg-white px-4 py-2.5">
+                      <span className="shrink-0 text-[12px] font-semibold">{st("订单号")}：</span>
+                      <strong className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[12px] font-bold text-[#0e131e]" title={order.order_no}>
+                        {order.order_no}
+                      </strong>
                     </div>
-                    <div className="success-order-meta rounded-[12px] border border-[#dfe5ed] bg-white px-4 py-2.5">
-                      <span>{st("购买时间：")}</span>
-                      <strong className="ml-2 font-semibold text-[#0e131e]">{order.paid_at || "-"}</strong>
+                    <div className="success-order-meta flex min-w-0 items-center gap-2 rounded-[12px] border border-[#dfe5ed] bg-white px-4 py-2.5">
+                      <span className="shrink-0 text-[12px] font-semibold">{st("购买时间：")}</span>
+                      <strong className="min-w-0 whitespace-nowrap text-[12px] font-semibold text-[#0e131e]">{order.paid_at || "-"}</strong>
                     </div>
                   </div>
                 </div>
@@ -250,12 +274,6 @@ export default function SuccessPage() {
         </main>
       </div>
 
-      <style>{`
-        :root[data-theme="dark"] .success-mobile-shell {
-          background: #f8fafc !important;
-          color-scheme: light;
-        }
-      `}</style>
     </>
   )
 }
@@ -329,6 +347,14 @@ function CheckIcon({ className = "" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <path d="M6.5 12.5l3.4 3.4 7.6-8.1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function BackIcon({ className = "" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M15 18 9 12l6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

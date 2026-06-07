@@ -16,7 +16,7 @@ from app.utils.haozpay_client import PaymentException
 logger = logging.getLogger(__name__)
 MIN_GATEWAY_AMOUNT = Decimal("0.02")
 ORDER_NO_PREFIX = "KW"
-ORDER_NO_RANDOM_LENGTH = 32
+ORDER_NO_RANDOM_LENGTH = 22
 ORDER_NO_ALPHABET = string.ascii_uppercase + string.digits
 ORDER_NO_GENERATION_ATTEMPTS = 10
 

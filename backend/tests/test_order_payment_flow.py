@@ -27,7 +27,7 @@ pytestmark = pytest.mark.anyio
 
 
 def _test_order_no(seed: str) -> str:
-    return "KW" + seed[-32:].rjust(32, "0")
+    return "KW" + seed[-22:].rjust(22, "0")
 
 
 class FakePaymentService:
@@ -102,7 +102,8 @@ async def _paid_order(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> d
     )
     assert create_response.status_code == 200
     order = create_response.json()["data"]
-    assert re.fullmatch(r"KW[A-Z0-9]{32}", order["order_no"])
+    assert re.fullmatch(r"KW[A-Z0-9]{22}", order["order_no"])
+    assert len(order["order_no"]) == 24
 
     callback_response = await client.post(
         "/orders/callback",

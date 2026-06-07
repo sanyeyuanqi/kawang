@@ -407,9 +407,15 @@ export default function ProductDetailPage() {
             </div>
 
             <div className="mt-5 rounded-[14px] bg-[#f7f9fc] px-4 py-3">
-              <p className="break-all text-[13px] leading-6 text-[#64748b]">
-                {st("订单号：")}
-                {createdOrder ? createdOrder.order_no : <span className="inline-block h-4 w-40 animate-pulse rounded bg-[#dce5ef] align-middle" />}
+              <p className="flex min-w-0 items-center gap-1 overflow-x-auto whitespace-nowrap text-[#64748b]">
+                <span className="shrink-0 text-[13px]">{st("订单号：")}</span>
+                {createdOrder ? (
+                  <span className="shrink-0 text-[13px] font-semibold text-[#475569]" title={createdOrder.order_no}>
+                    {createdOrder.order_no}
+                  </span>
+                ) : (
+                  <span className="inline-block h-4 w-40 shrink-0 animate-pulse rounded bg-[#dce5ef] align-middle" />
+                )}
               </p>
               <p className="mt-1 text-[13px] text-[#64748b]">
                 {st("金额：")}
