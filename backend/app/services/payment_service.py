@@ -1,6 +1,6 @@
 import logging
 from app.config import settings
-from app.utils.haozpay_client import HaoZPayClient, PayInfo, RefundResult, PaymentException
+from app.utils.haozpay_client import HaoZPayClient, PayInfo, PaymentStatus, RefundResult, PaymentException
 
 logger = logging.getLogger(__name__)
 
@@ -54,3 +54,6 @@ class PaymentService:
             logger.warning("Using mock haozpay refund because debug mode is enabled and keys are missing")
             return RefundResult(refund_seq_id=f"MOCK-REFUND-{order_no}", refund_amount=str(refund_amount))
         return await self.client.create_refund(order_no, refund_amount, reason)
+
+    async def query_payment(self, gateway_order_no: str) -> PaymentStatus:
+        return await self.client.query_order(gateway_order_no)

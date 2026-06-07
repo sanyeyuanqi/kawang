@@ -24,8 +24,9 @@ export function resolveAssetUrl(url?: string | null): string {
   const value = url?.trim()
   if (!value) return ""
   if (/^(blob:|data:|https?:\/\/)/i.test(value)) return value
-  if (value.startsWith("/static/") && import.meta.env.DEV) {
-    return `${import.meta.env.VITE_STATIC_BASE_URL || "http://localhost:8080"}${value}`
+  if (value.startsWith("/static/")) {
+    const staticBaseUrl = import.meta.env.VITE_STATIC_BASE_URL?.replace(/\/+$/, "")
+    return staticBaseUrl ? `${staticBaseUrl}${value}` : value
   }
-  return value
+  return value.startsWith("/") ? value : `/${value}`
 }

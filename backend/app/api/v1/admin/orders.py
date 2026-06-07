@@ -69,13 +69,15 @@ async def _order_dict(db: AsyncSession, order: Order, with_codes: bool = False) 
 def _search_condition(q: str | None):
     if not q:
         return None
+    q = q.strip()
+    if q.upper().startswith("KW"):
+        return Order.order_no == q
     like = f"%{q}%"
     return (Order.order_no.like(like)) | (Order.contact_info.like(like)) | (Order.product_name.like(like))
 
 
 def _base_query(status: OrderStatus | None, q: str | None):
     stmt = select(Order)
-    count_stmt = select(func.count(Order.id))
     conditions = []
     if status:
         conditions.append(Order.status == status)
@@ -84,8 +86,7 @@ def _base_query(status: OrderStatus | None, q: str | None):
         conditions.append(search_condition)
     for condition in conditions:
         stmt = stmt.where(condition)
-        count_stmt = count_stmt.where(condition)
-    return stmt, count_stmt
+    return stmt
 
 
 @router.get("/orders")
@@ -97,9 +98,8 @@ async def list_orders(
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
-    stmt, count_stmt = _base_query(status, q)
+    stmt = _base_query(status, q)
     orders = (await db.execute(stmt.order_by(Order.id.desc()).offset(offset).limit(limit))).scalars().all()
-    total = (await db.execute(count_stmt)).scalar() or 0
     stats_stmt = select(Order.status, func.count(Order.id)).group_by(Order.status)
     search_condition = _search_condition(q)
     if search_condition is not None:
@@ -113,6 +113,7 @@ async def list_orders(
         "refunded": status_counts.get(OrderStatus.REFUNDED.value, 0),
         "cancelled": status_counts.get(OrderStatus.CANCELLED.value, 0),
     }
+    total = stats.get(status.value, 0) if status else stats["all"]
     return {"code": 200, "msg": "success", "data": {"items": [await _order_dict(db, o) for o in orders], "total": total, "offset": offset, "limit": limit, "stats": stats}}
 
 
@@ -123,7 +124,7 @@ async def export_orders(
     status: OrderStatus | None = Query(None),
     q: str | None = Query(None),
 ):
-    stmt, _ = _base_query(status, q)
+    stmt = _base_query(status, q)
     orders = (await db.execute(stmt.order_by(Order.id.desc()))).scalars().all()
     stream = io.StringIO()
     writer = csv.writer(stream)

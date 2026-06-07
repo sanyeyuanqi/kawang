@@ -1,23 +1,14 @@
 import { useEffect, useState, useRef } from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import { QRCodeSVG } from "qrcode.react"
-import api from "@/api/client"
 import { ErrorState } from "@/components/ui/ErrorState"
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner"
 import { useLanguage } from "@/context/LanguageContext"
+import { useOrderPaymentMonitor } from "@/hooks/useOrderPaymentMonitor"
 
 interface PayInfo {
   pay_type: number; html_form?: string; qr_url?: string; qr_content?: string
 }
-interface OrderResult {
-  order_no: string; status: string; total_amount: string; product_name: string
-  codes: { id: number; code_value: string }[]; paid_at: string | null
-}
-interface ApiResponse<T> { code: number; msg: string; data: T }
-
-const POLL_INTERVAL = 5000
-const POLL_TIMEOUT = 180000
-
 export default function PayPage() {
   const { st } = useLanguage()
   const { orderNo } = useParams<{ orderNo: string }>()
@@ -25,8 +16,7 @@ export default function PayPage() {
   const [payInfo, setPayInfo] = useState<PayInfo | null>(null)
   const [status, setStatus] = useState<"loading" | "ready" | "polling" | "paid" | "timeout">("loading")
   const [error, setError] = useState("")
-  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const paidHandledRef = useRef(false)
   const cashierUrl = payInfo?.qr_content || payInfo?.qr_url
 
   useEffect(() => {
@@ -43,20 +33,21 @@ export default function PayPage() {
     }
   }, [status, payInfo])
 
-  useEffect(() => {
-    if (!orderNo || status !== "ready") return
-    setStatus("polling")
-    pollRef.current = setInterval(async () => {
-      try {
-        const r = await api.get<ApiResponse<OrderResult>>("/orders/" + orderNo + "/result")
-        if (r.data.data?.status === "paid") { setStatus("paid"); clearInterval(pollRef.current); clearTimeout(timeoutRef.current); setTimeout(() => navigate("/orders/" + orderNo + "/success"), 1500) }
-      } catch {
-        setError(st("订单状态查询失败，请稍后在订单查询页查看"))
-      }
-    }, POLL_INTERVAL)
-    timeoutRef.current = setTimeout(() => { clearInterval(pollRef.current); setStatus("timeout") }, POLL_TIMEOUT)
-    return () => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current) }
-  }, [orderNo, status, navigate])
+  useOrderPaymentMonitor({
+    orderNo,
+    enabled: status === "ready" || status === "polling",
+    onPaid: () => {
+      if (paidHandledRef.current) return
+      paidHandledRef.current = true
+      setStatus("paid")
+      setTimeout(() => navigate("/orders/" + orderNo + "/success"), 1500)
+    },
+    onCancelled: () => {
+      setStatus("timeout")
+      setError(st("订单已取消，如已付款请联系客服处理"))
+    },
+    onTimeout: () => setStatus("timeout"),
+  })
 
   if (status === "loading") return <div className="min-h-screen flex items-center justify-center"><LoadingSpinner size="lg" label={st("支付信息加载中")} /></div>
   if (error) return <ErrorState className="min-h-screen" message={error} onRetry={() => navigate("/orders/query")} />
@@ -79,7 +70,7 @@ export default function PayPage() {
         </div>
       )}
 
-      {status === "polling" && <p className="text-14 text-gray-400 mt-6">{st("等待支付确认中...")}</p>}
+      {(status === "ready" || status === "polling") && <p className="text-14 text-gray-400 mt-6">{st("等待支付确认中...")}</p>}
       {status === "paid" && <div className="mt-6 text-success-500 font-semibold text-16">{st("支付成功！正在跳转...")}</div>}
       {status === "timeout" && <div className="mt-6 text-warning-500 text-14">{st("支付确认超时，可在订单查询页查看最新状态")}</div>}
     </div>

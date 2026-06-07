@@ -150,6 +150,19 @@ class RefundResult:
     refund_amount: str = ""
 
 
+@dataclass
+class PaymentStatus:
+    order_no: str = ""
+    merchant_no: str = ""
+    order_amount: str = ""
+    pay_amount: str = ""
+    pay_type: str = ""
+    pay_channel: str = ""
+    pay_status: str = ""
+    pay_time: Optional[str] = None
+    create_time: Optional[str] = None
+
+
 class HaoZPayClient:
     def __init__(
         self,
@@ -251,6 +264,22 @@ class HaoZPayClient:
             logger.warning("[haozpay] Callback missing sign")
             return False
         return verify(params, signature, self.platform_public_key)
+
+    async def query_order(self, gateway_order_no: str) -> PaymentStatus:
+        params = {"orderNo": gateway_order_no}
+        resp_data = await self._request("POST", "/pay-core/payment/query", params)
+        data = resp_data.get("data") or {}
+        return PaymentStatus(
+            order_no=str(data.get("orderNo") or ""),
+            merchant_no=str(data.get("merchantNo") or ""),
+            order_amount=str(data.get("orderAmount") or ""),
+            pay_amount=str(data.get("payAmount") or ""),
+            pay_type=str(data.get("payType") or ""),
+            pay_channel=str(data.get("payChannel") or ""),
+            pay_status=str(data.get("payStatus") or ""),
+            pay_time=data.get("payTime"),
+            create_time=data.get("createTime"),
+        )
 
     async def create_refund(
         self, order_no: str, refund_amount: int, refund_reason: str = ""

@@ -87,12 +87,11 @@ def upgrade() -> None:
     sa.Column('is_deleted', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['category_id'], ['category.id'], name=op.f('fk_product_category_id_category'), ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_product'))
     )
     op.create_table('order',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('order_no', sa.String(length=32), nullable=False),
+    sa.Column('order_no', sa.String(length=34), nullable=False),
     sa.Column('product_id', sa.Integer(), nullable=False),
     sa.Column('product_name', sa.String(length=100), nullable=False),
     sa.Column('product_price', sa.Numeric(precision=10, scale=2), nullable=False),
@@ -109,8 +108,6 @@ def upgrade() -> None:
     sa.Column('refund_seq_id', sa.String(length=64), nullable=True),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['product_id'], ['product.id'], name=op.f('fk_order_product_id_product'), ondelete='RESTRICT'),
-    sa.ForeignKeyConstraint(['user_id'], ['user.id'], name=op.f('fk_order_user_id_user'), ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_order'))
     )
     op.create_index(op.f('ix_order_order_no'), 'order', ['order_no'], unique=True)
@@ -125,8 +122,6 @@ def upgrade() -> None:
     sa.Column('assigned_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('is_deleted', sa.Boolean(), nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['order_id'], ['order.id'], name=op.f('fk_code_key_order_id_order'), ondelete='SET NULL'),
-    sa.ForeignKeyConstraint(['product_id'], ['product.id'], name=op.f('fk_code_key_product_id_product'), ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_code_key'))
     )
     op.create_index(op.f('ix_code_key_code_value'), 'code_key', ['code_value'], unique=False)

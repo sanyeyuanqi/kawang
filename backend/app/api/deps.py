@@ -3,6 +3,8 @@
 提供 FastAPI 依赖注入函数，用于用户身份认证和权限校验。
 """
 
+import logging
+from time import perf_counter
 from typing import Optional
 
 from fastapi import Depends, Header, HTTPException, Request
@@ -15,8 +17,13 @@ from app.models.user import User
 from app.utils.security import decode_token
 from app.utils.redis import get_redis, RedisKeys
 
+logger = logging.getLogger(__name__)
+_admin_access_cache: dict[int, tuple[float, bool]] = {}
+_ADMIN_ACCESS_CACHE_SECONDS = 15.0
+
 
 async def get_current_user(
+    request: Request,
     authorization: str = Header(..., description="Bearer {token}"),
     redis=Depends(get_redis),
 ) -> dict:
@@ -36,7 +43,10 @@ async def get_current_user(
             detail="Token 已过期或无效",
         )
 
+    should_trace = request.url.path.endswith("/orders/mine")
+    started_at = perf_counter()
     payload = decode_token(token)
+    jwt_decode_ms = (perf_counter() - started_at) * 1000
     if payload is None:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
@@ -50,11 +60,23 @@ async def get_current_user(
             detail="Token 已过期或无效",
         )
 
+    redis_started_at = perf_counter()
     stored_token = await redis.get(RedisKeys.auth_token(int(user_id)))
+    redis_get_ms = (perf_counter() - redis_started_at) * 1000
     if stored_token is None or stored_token != token:
         raise HTTPException(
             status_code=HTTP_401_UNAUTHORIZED,
             detail="Token 已过期或无效",
+        )
+
+    if should_trace:
+        logger.info(
+            "[auth.timing] path=%s user_id=%s jwt_decode=%.2fms redis_token_get=%.2fms total=%.2fms",
+            request.url.path,
+            user_id,
+            jwt_decode_ms,
+            redis_get_ms,
+            (perf_counter() - started_at) * 1000,
         )
 
     return payload
@@ -109,8 +131,25 @@ async def get_current_admin(
             status_code=HTTP_403_FORBIDDEN,
             detail="无操作权限",
         )
-    user = (await db.execute(select(User).where(User.id == int(current_user["sub"])))).scalar_one_or_none()
-    if user is None or user.role != "admin" or not user.is_active:
+    user_id = int(current_user["sub"])
+    now = perf_counter()
+    cached = _admin_access_cache.get(user_id)
+    if cached is not None and cached[0] > now:
+        if cached[1]:
+            return current_user
+        raise HTTPException(
+            status_code=HTTP_403_FORBIDDEN,
+            detail="无操作权限",
+        )
+
+    user_row = (
+        await db.execute(
+            select(User.role, User.is_active).where(User.id == user_id)
+        )
+    ).one_or_none()
+    allowed = user_row is not None and user_row.role == "admin" and user_row.is_active
+    _admin_access_cache[user_id] = (now + _ADMIN_ACCESS_CACHE_SECONDS, allowed)
+    if not allowed:
         raise HTTPException(
             status_code=HTTP_403_FORBIDDEN,
             detail="无操作权限",

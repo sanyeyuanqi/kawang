@@ -23,10 +23,10 @@ export const shopInfoConfig = {
     contact: {
       title: "联系方式",
       label: "客服微信：",
-      value: "achuan-card",
+      value: "ylj3194584108",
       helpText: "扫码添加客服，或凭下单联系方式查询订单",
       qrCaption: "二维码",
-      qrImageSrc: "",
+      qrImageSrc: "/images/customer-qr.png",
     },
     purchase: {
       title: "购买说明",

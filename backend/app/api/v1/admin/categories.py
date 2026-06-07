@@ -61,20 +61,38 @@ async def list_categories(
     limit: int = Query(100, ge=1, le=200),
 ) -> dict[str, Any]:
     product_count_subq = (
-        select(func.count(Product.id))
-        .where(Product.category_id == Category.id, Product.is_deleted == False)
-        .scalar_subquery()
+        select(
+            Product.category_id.label("category_id"),
+            func.count(Product.id).label("product_count"),
+        )
+        .where(Product.is_deleted == False)
+        .group_by(Product.category_id)
+        .subquery()
     )
     stmt = (
-        select(Category, product_count_subq.label("product_count"))
+        select(
+            Category,
+            func.coalesce(product_count_subq.c.product_count, 0).label("product_count"),
+            func.count().over().label("total_count"),
+        )
+        .outerjoin(product_count_subq, product_count_subq.c.category_id == Category.id)
         .where(Category.is_deleted == False)
         .order_by(Category.sort_order, Category.id)
         .offset(offset)
         .limit(limit)
     )
-    total = (await db.execute(select(func.count(Category.id)).where(Category.is_deleted == False))).scalar() or 0
     rows = (await db.execute(stmt)).all()
-    return {"code": 200, "msg": "success", "data": {"items": [_category_dict(c, product_count or 0) for c, product_count in rows], "total": total, "offset": offset, "limit": limit}}
+    total = int(rows[0].total_count) if rows else 0
+    return {
+        "code": 200,
+        "msg": "success",
+        "data": {
+            "items": [_category_dict(row[0], row.product_count or 0) for row in rows],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        },
+    }
 
 
 @router.post("/categories")

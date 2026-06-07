@@ -15,6 +15,10 @@ async def get_redis() -> Redis:
             settings.REDIS_URL,
             decode_responses=True,
             max_connections=settings.REDIS_MAX_CONNECTIONS,
+            socket_connect_timeout=0.2,
+            socket_timeout=0.2,
+            retry_on_timeout=False,
+            health_check_interval=30,
         )
     if _client is None:
         _client = Redis(connection_pool=_pool)
@@ -76,6 +80,10 @@ class RedisKeys:
     @staticmethod
     def shop_cache() -> str:
         return f"{RedisKeys.PREFIX}:shop:config"
+
+    @staticmethod
+    def pinned_announcement() -> str:
+        return f"{RedisKeys.PREFIX}:announcement:pinned"
 
     @staticmethod
     def product_detail(product_id: int) -> str:

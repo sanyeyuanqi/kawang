@@ -9,20 +9,26 @@ interface DashboardData {
   stats: {
     product_count: number
     available_stock: number
+    total_orders?: number
     pending_orders: number
     paid_orders: number
+    today_orders?: number
     total_revenue: string
     today_revenue: string
   }
-  recent_orders: Array<{
-    id: number
-    order_no: string
-    product_name: string
-    contact_info: string
-    status: string
-    total_amount: string
-    created_at: string | null
-  }>
+  today_orders?: DashboardOrder[]
+  overview_orders?: DashboardOrder[]
+  recent_orders?: DashboardOrder[]
+}
+
+interface DashboardOrder {
+  id: number
+  order_no: string
+  product_name: string
+  contact_info: string
+  status: string
+  total_amount: string
+  created_at: string | null
 }
 
 const statusLabel: Record<string, string> = {
@@ -64,18 +70,19 @@ export default function DashboardPage() {
   }, [load])
 
   const stats = data?.stats
+  const overviewOrders = data?.overview_orders ?? data?.today_orders ?? data?.recent_orders ?? []
   const cards = stats ? [
     { label: "今日收入", value: formatPrice(stats.today_revenue), tone: "red" as const },
-    { label: "今日订单", value: stats.paid_orders, tone: "blue" as const },
+    { label: "总订单", value: stats.total_orders ?? 0, tone: "blue" as const },
+    { label: "支付订单", value: stats.paid_orders, tone: "orange" as const },
     { label: "可售卡密", value: stats.available_stock, tone: "green" as const },
-    { label: "待支付订单", value: stats.pending_orders, tone: "orange" as const },
   ] : []
 
   return (
     <div className="admin-dashboard space-y-6">
       <div>
         <h1 className="admin-dashboard-title text-26 font-bold text-[#111827]">系统概览</h1>
-        <p className="admin-dashboard-subtitle mt-2 text-14 text-[#8e99aa]">查看销售额、订单、库存与最近购买记录</p>
+        <p className="admin-dashboard-subtitle mt-2 text-14 text-[#8e99aa]">查看销售额、订单、库存与待处理购买记录</p>
       </div>
 
       {error && (
@@ -105,13 +112,13 @@ export default function DashboardPage() {
 
         <section className="admin-recent-orders mt-8 rounded-[18px] border border-[#edf1f6] bg-[#fbfdff] p-5">
           <div className="flex items-center justify-between">
-            <h2 className="admin-section-title text-18 font-bold text-[#111827]">最近订单</h2>
-            <span className="admin-section-meta text-13 text-[#8e99aa]">最近 3 条</span>
+            <h2 className="admin-section-title text-18 font-bold text-[#111827]">今日订单 / 待支付</h2>
+            <span className="admin-section-meta text-13 text-[#8e99aa]">共 {overviewOrders.length} 条</span>
           </div>
 
-          {data?.recent_orders?.length ? (
+          {overviewOrders.length ? (
             <div className="admin-order-list mt-4 divide-y divide-[#edf1f6]">
-              {data.recent_orders.map((order) => (
+              {overviewOrders.map((order) => (
                 <div key={order.id} className="admin-order-row grid gap-3 py-4 text-14 md:grid-cols-[1.2fr_1fr_1fr_0.7fr_0.8fr] md:items-center">
                   <span className="admin-order-no font-semibold text-[#111827]">{order.order_no}</span>
                   <span className="admin-order-product text-[#404a5c]">{order.product_name}</span>
@@ -124,7 +131,7 @@ export default function DashboardPage() {
               ))}
             </div>
           ) : (
-            <EmptyState title="暂无订单记录" description="有新订单后会自动显示在这里。" className="mt-4 rounded-[14px] bg-white" />
+            <EmptyState title="暂无今日订单或待支付订单" description="有新订单或待支付订单后会自动显示在这里。" className="mt-4 rounded-[14px] bg-white" />
           )}
         </section>
       </div>

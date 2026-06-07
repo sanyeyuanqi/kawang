@@ -16,8 +16,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("product", sa.Column("sold_count", sa.Integer(), nullable=False, server_default="0"))
+    if not _column_exists("product", "sold_count"):
+        op.add_column("product", sa.Column("sold_count", sa.Integer(), nullable=False, server_default="0"))
 
 
 def downgrade() -> None:
-    op.drop_column("product", "sold_count")
+    if _column_exists("product", "sold_count"):
+        op.drop_column("product", "sold_count")
+
+
+def _column_exists(table_name: str, column_name: str) -> bool:
+    inspector = sa.inspect(op.get_bind())
+    return any(column["name"] == column_name for column in inspector.get_columns(table_name))

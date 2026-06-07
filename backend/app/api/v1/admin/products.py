@@ -46,7 +46,7 @@ def _product_dict(product: Product, stock: int = 0, category_name: str | None = 
     return {
         "id": product.id,
         "category_id": product.category_id,
-        "category_name": category_name or (product.category.name if product.category else None),
+        "category_name": category_name,
         "name": product.name,
         "description": product.description,
         "cover_image": product.cover_image,
@@ -72,26 +72,66 @@ async def list_products(
     _: dict = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
     q: str | None = Query(None),
+    options_only: bool = Query(False),
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict[str, Any]:
+    if options_only:
+        stmt = select(Product.id, Product.name).where(Product.is_deleted == False)
+        if q:
+            stmt = stmt.where(Product.name.like(f"%{q}%"))
+        rows = (
+            await db.execute(
+                stmt.order_by(Product.sort_order.desc(), Product.id.desc())
+                .offset(offset)
+                .limit(limit)
+            )
+        ).all()
+        return {
+            "code": 200,
+            "msg": "success",
+            "data": {
+                "items": [{"id": product_id, "name": name} for product_id, name in rows],
+                "total": len(rows),
+                "offset": offset,
+                "limit": limit,
+            },
+        }
+
     stock_subq = (
-        select(func.count(CodeKey.id))
-        .where(CodeKey.product_id == Product.id, CodeKey.status == "unused", CodeKey.is_deleted == False)
-        .scalar_subquery()
+        select(
+            CodeKey.product_id.label("product_id"),
+            func.count(CodeKey.id).label("stock"),
+        )
+        .where(CodeKey.status == "unused", CodeKey.is_deleted == False)
+        .group_by(CodeKey.product_id)
+        .subquery()
     )
     stmt = (
-        select(Product, Category.name.label("category_name"), stock_subq.label("stock"))
+        select(
+            Product,
+            Category.name.label("category_name"),
+            func.coalesce(stock_subq.c.stock, 0).label("stock"),
+            func.count().over().label("total_count"),
+        )
         .outerjoin(Category, Product.category_id == Category.id)
+        .outerjoin(stock_subq, stock_subq.c.product_id == Product.id)
         .where(Product.is_deleted == False)
     )
-    count_stmt = select(func.count(Product.id)).where(Product.is_deleted == False)
     if q:
         stmt = stmt.where(Product.name.like(f"%{q}%"))
-        count_stmt = count_stmt.where(Product.name.like(f"%{q}%"))
     rows = (await db.execute(stmt.order_by(Product.sort_order.desc(), Product.id.desc()).offset(offset).limit(limit))).all()
-    total = (await db.execute(count_stmt)).scalar() or 0
-    return {"code": 200, "msg": "success", "data": {"items": [_product_dict(p, s or 0, category_name) for p, category_name, s in rows], "total": total, "offset": offset, "limit": limit}}
+    total = int(rows[0].total_count) if rows else 0
+    return {
+        "code": 200,
+        "msg": "success",
+        "data": {
+            "items": [_product_dict(row[0], row.stock or 0, row.category_name) for row in rows],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        },
+    }
 
 
 @router.post("/products")

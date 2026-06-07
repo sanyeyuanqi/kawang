@@ -29,7 +29,7 @@ async def seed() -> None:
                 shop_name="小野卡铺",
                 shop_slogan="自动发卡 · 售后在线 · 稳定靠谱",
                 avatar_text="卡",
-                contact_wechat="achuan-card",
+                contact_wechat="ylj3194584108",
                 contact_qq="282212",
                 is_open=True,
             ))
@@ -37,7 +37,7 @@ async def seed() -> None:
             shop.shop_name = "小野卡铺"
             shop.shop_slogan = "自动发卡 · 售后在线 · 稳定靠谱"
             shop.avatar_text = "卡"
-            shop.contact_wechat = "achuan-card"
+            shop.contact_wechat = "ylj3194584108"
             shop.contact_qq = "282212"
             shop.is_open = True
 
@@ -131,11 +131,21 @@ async def seed() -> None:
             db.add(user)
             await db.flush()
 
-        paid_order = (await db.execute(select(Order).where(Order.order_no == "KW202606020001"))).scalar_one_or_none()
+        demo_order_no = "KWABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        legacy_demo_order_nos = ["KW" + "202606020001", "KWDEMO" + "202606020001ABCDEFGHJKLMNPQR"]
+        paid_order = (await db.execute(select(Order).where(Order.order_no == demo_order_no))).scalar_one_or_none()
+        if paid_order is None:
+            paid_order = (await db.execute(
+                select(Order)
+                .where(Order.order_no.in_(legacy_demo_order_nos))
+                .order_by(Order.id.desc())
+            )).scalars().first()
+            if paid_order is not None:
+                paid_order.order_no = demo_order_no
         if paid_order is None:
             paid_product = product_map["视频会员月卡"]
             paid_order = Order(
-                order_no="KW202606020001",
+                order_no=demo_order_no,
                 product_id=paid_product.id,
                 product_name=paid_product.name,
                 product_price=paid_product.price,

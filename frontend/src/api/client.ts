@@ -9,6 +9,7 @@ const api = axios.create({
 let isRefreshing = false
 let refreshWaiters: Array<(token: string | null) => void> = []
 const AUTH_STORAGE_KEY = "auth_storage"
+const USER_STORAGE_KEY = "auth_user"
 type AuthStorageKind = "local" | "session"
 
 function notifyRefreshWaiters(token: string | null) {
@@ -93,6 +94,7 @@ function getActiveStorageKind(): AuthStorageKind {
 function clearStorage(storage: Storage) {
   storage.removeItem("token")
   storage.removeItem("refresh_token")
+  storage.removeItem(USER_STORAGE_KEY)
   storage.removeItem("admin_token")
   storage.removeItem("admin_refresh_token")
 }
@@ -110,6 +112,25 @@ export function setToken(token: string, remember?: boolean, refreshToken?: strin
   localStorage.removeItem("admin_refresh_token")
   sessionStorage.removeItem("admin_token")
   sessionStorage.removeItem("admin_refresh_token")
+}
+export function setStoredUser(user: unknown, remember?: boolean) {
+  const kind: AuthStorageKind = remember === undefined ? getActiveStorageKind() : (remember ? "local" : "session")
+  const storage = getStorage(kind)
+  const staleStorage = getStorage(kind === "local" ? "session" : "local")
+
+  staleStorage.removeItem(USER_STORAGE_KEY)
+  storage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
+}
+export function getStoredUser<T = unknown>(): T | null {
+  const raw = localStorage.getItem(USER_STORAGE_KEY) || sessionStorage.getItem(USER_STORAGE_KEY)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    localStorage.removeItem(USER_STORAGE_KEY)
+    sessionStorage.removeItem(USER_STORAGE_KEY)
+    return null
+  }
 }
 export function clearToken() {
   clearStorage(localStorage)

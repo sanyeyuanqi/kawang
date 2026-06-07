@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Link, useParams } from "react-router-dom"
 import { QRCodeSVG } from "qrcode.react"
 import api from "@/api/client"
@@ -6,7 +6,9 @@ import { getProductDetail } from "@/api/shop"
 import { useAuth } from "@/hooks/useAuth"
 import { formatPrice, resolveAssetUrl } from "@/lib/utils"
 import { MobileHomeIndicator } from "@/components/shop/MobilePhoneFrame"
+import { useToast } from "@/components/ui/Toast"
 import { useLanguage } from "@/context/LanguageContext"
+import { useOrderPaymentMonitor } from "@/hooks/useOrderPaymentMonitor"
 import type { ProductDetail } from "@/types/common"
 
 interface PayInfo {
@@ -18,30 +20,24 @@ interface PayInfo {
 
 interface CreatedOrder {
   order_no: string
+  status?: string
   total_amount: string
   pay_info: PayInfo
 }
-
-interface OrderResult {
-  order_no: string
-  status: string
-}
-
-interface ApiResponse<T> {
-  code: number
-  msg: string
-  data: T
-}
-
-const POLL_INTERVAL = 5000
-const POLL_TIMEOUT = 180000
 
 function getOrderErrorMessage(err: any) {
   return err.response?.data?.detail?.msg || err.response?.data?.msg || "下单失败"
 }
 
+function clampQuantity(value: number, stock: number) {
+  const max = Math.max(1, stock)
+  if (!Number.isFinite(value)) return 1
+  return Math.max(1, Math.min(max, Math.floor(value)))
+}
+
 export default function ProductDetailPage() {
-  const { st } = useLanguage()
+  const { st, t } = useLanguage()
+  const { addToast } = useToast()
   const { id } = useParams<{ id: string }>()
   const { user } = useAuth()
   const [product, setProduct] = useState<ProductDetail | null>(null)
@@ -51,11 +47,12 @@ export default function ProductDetailPage() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [createdOrder, setCreatedOrder] = useState<CreatedOrder | null>(null)
+  const [payDialogOpen, setPayDialogOpen] = useState(false)
   const [payStatus, setPayStatus] = useState<"idle" | "polling" | "paid" | "timeout">("idle")
   const [imageFailed, setImageFailed] = useState(false)
-  const pollRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const cashierUrl = createdOrder?.pay_info.qr_content || createdOrder?.pay_info.qr_url
+  const userEmail = user?.email?.trim() || ""
+  const shouldUseAccountEmail = Boolean(userEmail)
 
   useEffect(() => {
     if (!id) return
@@ -71,48 +68,48 @@ export default function ProductDetailPage() {
     if (!contactInfo && user?.email) setContactInfo(user.email)
   }, [contactInfo, user])
 
-  useEffect(() => {
-    if (!createdOrder || payStatus !== "idle") return
-    setPayStatus("polling")
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await api.get<ApiResponse<OrderResult>>(`/orders/${createdOrder.order_no}/result`)
-        if (res.data.data?.status === "paid") {
-          setPayStatus("paid")
-          clearInterval(pollRef.current)
-          clearTimeout(timeoutRef.current)
-        }
-      } catch {
-        setError(st("订单状态查询失败，请稍后在订单查询页查看"))
-      }
-    }, POLL_INTERVAL)
-    timeoutRef.current = setTimeout(() => {
-      clearInterval(pollRef.current)
+  useOrderPaymentMonitor({
+    orderNo: createdOrder?.order_no,
+    enabled: Boolean(createdOrder && payDialogOpen && payStatus !== "paid" && payStatus !== "timeout"),
+    onPaid: () => setPayStatus("paid"),
+    onCancelled: () => {
       setPayStatus("timeout")
-    }, POLL_TIMEOUT)
-    return () => {
-      clearInterval(pollRef.current)
-      clearTimeout(timeoutRef.current)
-    }
-  }, [createdOrder, payStatus])
+      setError(st("订单已取消，如已付款请联系客服处理"))
+    },
+    onTimeout: () => setPayStatus("timeout"),
+  })
 
   const total = useMemo(() => {
     if (!product) return "0.00"
     return (Number(product.price) * quantity).toFixed(2)
   }, [product, quantity])
 
+  useEffect(() => {
+    if (!product) return
+    setQuantity(current => clampQuantity(current, product.available_stock))
+  }, [product])
+
   const buy = async () => {
     if (!product) return
-    const trimmedContactInfo = contactInfo.trim()
+    if (product.available_stock <= 0 || !product.is_on_sale) return
+    if (quantity > product.available_stock) {
+      setQuantity(clampQuantity(quantity, product.available_stock))
+      addToast({ type: "warning", message: `${st("库存仅有")} ${product.available_stock} ${st("件")}` })
+      return
+    }
+    const trimmedContactInfo = shouldUseAccountEmail ? userEmail : contactInfo.trim()
     if (!trimmedContactInfo) {
       setError(st("请填写联系方式"))
       return
     }
-    if (trimmedContactInfo.length < 6 || trimmedContactInfo.length > 32) {
-      setError(st("联系方式需为 6-32 个字符"))
+    if (trimmedContactInfo.length < 6 || trimmedContactInfo.length > 200) {
+      setError(st("联系方式需为 6-200 个字符"))
       return
     }
     setError("")
+    setCreatedOrder(null)
+    setPayStatus("idle")
+    setPayDialogOpen(true)
     setSubmitting(true)
     try {
       const res = await api.post("/orders", {
@@ -124,11 +121,12 @@ export default function ProductDetailPage() {
       const data = res.data.data
       sessionStorage.setItem(`pay_info_${data.order_no}`, JSON.stringify(data.pay_info))
       setCreatedOrder(data)
-      setPayStatus("idle")
+      setPayStatus(data.status === "paid" ? "paid" : "polling")
     } catch (err: any) {
       const rawMessage = getOrderErrorMessage(err)
       const message = st(rawMessage)
       setError(message)
+      setPayDialogOpen(false)
       if (rawMessage.includes("库存不足") && id) {
         try {
           const latestProduct = await getProductDetail(id)
@@ -149,6 +147,36 @@ export default function ProductDetailPage() {
   if (!product) return <div className="figma-web-container px-6 py-12 text-[#6b7990] md:px-0">{st("商品不存在")}</div>
   const coverImage = resolveAssetUrl(product.cover_image)
   const showImage = Boolean(coverImage && !imageFailed)
+  const soldOut = product.available_stock <= 0 || !product.is_on_sale
+  const purchaseLabel = soldOut ? t("common.outOfStock") : st("立即购买")
+  const canDecreaseQuantity = !soldOut && quantity > 1
+  const canIncreaseQuantity = !soldOut && quantity < product.available_stock
+  const quantityButtonClass = (enabled: boolean) =>
+    "flex items-center justify-center border border-[#d1def0] font-medium transition " + (
+      enabled
+        ? "bg-[#2663eb] text-white hover:bg-[#1f57d6]"
+        : "cursor-not-allowed bg-white text-[#b8c3d4]"
+    )
+  const showQuantityWarning = (message: string) => addToast({ type: "warning", message })
+  const getStockLimitMessage = (stock: number) => `${st("库存仅有")} ${stock} ${st("件")}`
+  const updateQuantity = (nextValue: number) => {
+    if (soldOut) return
+    if (!Number.isFinite(nextValue)) {
+      setQuantity(1)
+      return
+    }
+    if (nextValue < 1) {
+      setQuantity(1)
+      showQuantityWarning(st("至少选择一件"))
+      return
+    }
+    if (nextValue > product.available_stock) {
+      setQuantity(clampQuantity(nextValue, product.available_stock))
+      showQuantityWarning(getStockLimitMessage(product.available_stock))
+      return
+    }
+    setQuantity(clampQuantity(nextValue, product.available_stock))
+  }
 
   return (
     <>
@@ -183,12 +211,19 @@ export default function ProductDetailPage() {
         </div>
 
         <div className="mt-6">
-          <input
-            value={contactInfo}
-            onChange={event => setContactInfo(event.target.value)}
-            placeholder={st("填写联系方式，后续可凭它查询卡密")}
-            className="h-[52px] w-full rounded-[12px] border border-[#dfe5ed] bg-[#fafbfd] px-4 text-[15px] outline-none placeholder:text-[#8b98ad] focus:border-[#0e4beb]"
-          />
+          {shouldUseAccountEmail ? (
+            <div className="rounded-[14px] border border-[#dfe5ed] bg-[#fafbfd] px-4 py-3">
+              <p className="text-[13px] font-medium text-[#6b7990]">{st("下单联系方式")}</p>
+              <p className="mt-1 break-all text-[15px] font-semibold text-[#111827]">{userEmail}</p>
+            </div>
+          ) : (
+            <input
+              value={contactInfo}
+              onChange={event => setContactInfo(event.target.value)}
+              placeholder={st("填写联系方式，后续可凭它查询卡密")}
+              className="h-[52px] w-full rounded-[12px] border border-[#dfe5ed] bg-[#fafbfd] px-4 text-[15px] outline-none placeholder:text-[#8b98ad] focus:border-[#0e4beb]"
+            />
+          )}
           {error && <p className="mt-3 text-[14px] text-[#ec3c30]">{error}</p>}
         </div>
 
@@ -197,9 +232,19 @@ export default function ProductDetailPage() {
             <h2 className="text-[16px] font-bold text-[#0e131e]">{st("购买数量")} <span className="ml-2 text-[13px] font-normal text-[#6b7990]">{st("可多件购买")}</span></h2>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex size-9 items-center justify-center rounded-[10px] border border-[#d1def0] bg-[#f5f8fe] text-[20px] font-medium text-[#4f6380]">-</button>
-            <div className="flex h-9 w-[48px] items-center justify-center rounded-[10px] border border-[#d1def0] bg-white text-[18px] font-semibold">{quantity}</div>
-            <button onClick={() => setQuantity(Math.min(product.available_stock || 1, quantity + 1))} className="flex size-9 items-center justify-center rounded-[10px] bg-[#2663eb] text-[20px] font-medium text-white">+</button>
+            <button type="button" disabled={soldOut} onClick={() => updateQuantity(quantity - 1)} className={quantityButtonClass(canDecreaseQuantity) + " size-9 rounded-[10px] text-[20px]"}>-</button>
+            <input
+              type="number"
+              min={1}
+              max={Math.max(1, product.available_stock)}
+              step={1}
+              disabled={soldOut}
+              value={quantity}
+              onChange={event => updateQuantity(Number(event.target.value))}
+              onBlur={() => updateQuantity(quantity)}
+              className="h-9 w-[54px] rounded-[10px] border border-[#d1def0] bg-white text-center text-[18px] font-semibold outline-none focus:border-[#0e4beb] disabled:cursor-not-allowed disabled:text-[#b8c3d4]"
+            />
+            <button type="button" disabled={soldOut} onClick={() => updateQuantity(quantity + 1)} className={quantityButtonClass(canIncreaseQuantity) + " size-9 rounded-[10px] text-[20px]"}>+</button>
           </div>
         </div>
       </section>
@@ -207,8 +252,8 @@ export default function ProductDetailPage() {
       <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-[430px] -translate-x-1/2 border-t border-[#dfe5ed] bg-white px-7 pb-5 pt-6">
         <div className="flex items-center justify-between">
           <p className="text-[34px] font-bold text-[#ec3c30]">{formatPrice(total)}</p>
-          <button onClick={buy} disabled={submitting || product.available_stock <= 0} className="h-[64px] w-[228px] rounded-[14px] bg-[#0e4beb] text-[18px] font-medium text-white shadow-[0_8px_22px_-8px_rgba(10,18,31,0.28)] disabled:opacity-60">
-            {submitting ? st("处理中...") : st("立即购买")}
+          <button onClick={buy} disabled={submitting || soldOut} className={"h-[64px] w-[228px] rounded-[14px] text-[18px] font-medium text-white shadow-[0_8px_22px_-8px_rgba(10,18,31,0.28)] disabled:cursor-not-allowed " + (soldOut ? "bg-[#b85b5b] shadow-[0_12px_28px_-14px_rgba(184,91,91,0.55)]" : "bg-[#0e4beb] disabled:bg-[#94a3b8] disabled:shadow-none")}>
+            {submitting ? st("处理中...") : purchaseLabel}
           </button>
         </div>
         <div className="mt-5">
@@ -266,13 +311,25 @@ export default function ProductDetailPage() {
               </p>
 
               <div className="mt-10 min-w-0 rounded-[22px] border border-[#dfe5ed] bg-[#f8fbff] p-7">
-                <label className="block text-[15px] font-medium text-[#404a5c]">{st("联系方式（免登录购买）")}</label>
-                <input
-                  value={contactInfo}
-                  onChange={event => setContactInfo(event.target.value)}
-                  placeholder={st("填写手机号 / 微信 / QQ，后续可凭它查询卡密")}
-                  className="mt-3 h-[56px] w-full rounded-[14px] border border-[#d6e0f0] bg-white px-5 text-[15px] outline-none placeholder:text-[#9aa6ba] focus:border-[#0e4beb]"
-                />
+                {shouldUseAccountEmail ? (
+                  <div>
+                    <p className="block text-[15px] font-medium text-[#404a5c]">{st("下单联系方式")}</p>
+                    <div className="mt-3 rounded-[14px] border border-[#d6e0f0] bg-white px-5 py-4">
+                      <p className="text-[13px] text-[#737d8f]">{st("已登录，默认使用账号邮箱")}</p>
+                      <p className="mt-2 break-all text-[15px] font-semibold text-[#111827]">{userEmail}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[15px] font-medium text-[#404a5c]">{st("联系方式（免登录购买）")}</label>
+                    <input
+                      value={contactInfo}
+                      onChange={event => setContactInfo(event.target.value)}
+                      placeholder={st("填写手机号 / 微信 / QQ，后续可凭它查询卡密")}
+                      className="mt-3 h-[56px] w-full rounded-[14px] border border-[#d6e0f0] bg-white px-5 text-[15px] outline-none placeholder:text-[#9aa6ba] focus:border-[#0e4beb]"
+                    />
+                  </div>
+                )}
 
                 <div className="mt-8 flex flex-wrap items-end justify-between gap-5">
                   <div className="min-w-[210px]">
@@ -281,14 +338,24 @@ export default function ProductDetailPage() {
                       <span className="text-[14px] text-[#737d8f]">{st("可多件购买")}</span>
                     </div>
                     <div className="mt-3 flex items-center gap-3">
-                      <button onClick={() => setQuantity(Math.max(1, quantity - 1))} className="flex size-11 items-center justify-center rounded-[12px] border border-[#d1def0] bg-white text-[24px] font-medium text-[#4f6380]">-</button>
-                      <div className="flex h-11 w-[64px] items-center justify-center rounded-[12px] border border-[#d1def0] bg-white text-[19px] font-semibold">{quantity}</div>
-                      <button onClick={() => setQuantity(Math.min(product.available_stock || 1, quantity + 1))} className="flex size-11 items-center justify-center rounded-[12px] bg-[#2663eb] text-[22px] font-medium text-white">+</button>
+                      <button type="button" disabled={soldOut} onClick={() => updateQuantity(quantity - 1)} className={quantityButtonClass(canDecreaseQuantity) + " size-11 rounded-[12px] text-[24px]"}>-</button>
+                      <input
+                        type="number"
+                        min={1}
+                        max={Math.max(1, product.available_stock)}
+                        step={1}
+                        disabled={soldOut}
+                        value={quantity}
+                        onChange={event => updateQuantity(Number(event.target.value))}
+                        onBlur={() => updateQuantity(quantity)}
+                        className="h-11 w-[64px] rounded-[12px] border border-[#d1def0] bg-white text-center text-[19px] font-semibold outline-none focus:border-[#0e4beb] disabled:cursor-not-allowed disabled:text-[#b8c3d4]"
+                      />
+                      <button type="button" disabled={soldOut} onClick={() => updateQuantity(quantity + 1)} className={quantityButtonClass(canIncreaseQuantity) + " size-11 rounded-[12px] text-[22px]"}>+</button>
                     </div>
                   </div>
 
-                  <button onClick={buy} disabled={submitting || product.available_stock <= 0} className="h-[54px] min-w-[180px] flex-1 rounded-[14px] bg-[#0e4beb] px-10 text-[16px] font-semibold text-white shadow-[0_12px_28px_-12px_rgba(14,75,235,0.7)] disabled:opacity-60 sm:flex-none">
-                    {submitting ? st("处理中...") : st("立即购买")}
+                  <button onClick={buy} disabled={submitting || soldOut} className={"h-[54px] min-w-[180px] flex-1 rounded-[14px] px-10 text-[16px] font-semibold text-white disabled:cursor-not-allowed sm:flex-none " + (soldOut ? "bg-[#b85b5b] shadow-[0_12px_28px_-14px_rgba(184,91,91,0.55)]" : "bg-[#0e4beb] shadow-[0_12px_28px_-12px_rgba(14,75,235,0.7)] disabled:bg-[#94a3b8] disabled:shadow-none")}>
+                    {submitting ? st("处理中...") : purchaseLabel}
                   </button>
                 </div>
 
@@ -307,31 +374,47 @@ export default function ProductDetailPage() {
       </section>
     </div>
 
-      {createdOrder && (
+      {payDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1220]/55 px-5 py-8 backdrop-blur-sm">
-          <div className="relative w-full max-w-[430px] rounded-[24px] bg-white p-6 shadow-[0_28px_70px_-24px_rgba(10,18,31,0.55)]">
+          <div className="relative w-full max-w-[430px] rounded-[24px] bg-[#101827] p-6 text-white shadow-[0_28px_70px_-24px_rgba(10,18,31,0.55)]">
             <button
               type="button"
-              onClick={() => setCreatedOrder(null)}
-              className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full bg-[#f2f5f9] text-[20px] leading-none text-[#64748b] hover:bg-[#e8edf5]"
+              onClick={() => setPayDialogOpen(false)}
+              className="absolute right-4 top-4 flex size-9 items-center justify-center rounded-full bg-[#f2f5f9] text-[20px] leading-none text-[#64748b] hover:bg-white"
               aria-label={st("关闭支付弹层")}
             >
               ×
             </button>
             <div className="pr-8">
-              <h2 className="text-[22px] font-bold text-[#111827]">{st("扫码完成支付")}</h2>
-              <p className="mt-2 text-[14px] text-[#6b7990]">{st("请使用收银台二维码完成付款")}</p>
+              <h2 className="text-[22px] font-bold text-white">{st("扫码完成支付")}</h2>
+              <p className="mt-2 text-[14px] text-[#b8c6da]">{st("请使用收银台二维码完成付款")}</p>
             </div>
 
-            {cashierUrl && (
-              <div className="mx-auto mt-6 flex size-[244px] items-center justify-center rounded-[18px] border border-[#e4eaf2] bg-white p-4 shadow-[0_12px_30px_-20px_rgba(10,18,31,0.35)]">
+            <div className="mx-auto mt-6 flex size-[244px] items-center justify-center rounded-[18px] border border-white/75 bg-white p-4 shadow-[0_12px_30px_-20px_rgba(10,18,31,0.35)]">
+              {cashierUrl ? (
                 <QRCodeSVG value={cashierUrl} size={210} />
-              </div>
-            )}
+              ) : payStatus === "paid" ? (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-4 rounded-[12px] bg-[#f3f6fb] text-[#08a678]">
+                  <span className="grid h-14 w-14 place-items-center rounded-full border-4 border-[#c9f0e3] text-[34px] leading-none">✓</span>
+                  <span className="text-[14px] font-semibold">{st("支付成功")}</span>
+                </div>
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-4 rounded-[12px] bg-[#f3f6fb] text-[#64748b]">
+                  <span className="h-10 w-10 animate-spin rounded-full border-4 border-[#d8e1ec] border-t-[#0e4beb]" />
+                  <span className="text-[14px] font-semibold">{st("正在生成二维码...")}</span>
+                </div>
+              )}
+            </div>
 
             <div className="mt-5 rounded-[14px] bg-[#f7f9fc] px-4 py-3">
-              <p className="break-all text-[13px] leading-6 text-[#64748b]">{st("订单号：")}{createdOrder.order_no}</p>
-              <p className="mt-1 text-[13px] text-[#64748b]">{st("金额：")}{formatPrice(createdOrder.total_amount)}</p>
+              <p className="break-all text-[13px] leading-6 text-[#64748b]">
+                {st("订单号：")}
+                {createdOrder ? createdOrder.order_no : <span className="inline-block h-4 w-40 animate-pulse rounded bg-[#dce5ef] align-middle" />}
+              </p>
+              <p className="mt-1 text-[13px] text-[#64748b]">
+                {st("金额：")}
+                {createdOrder ? formatPrice(createdOrder.total_amount) : <span className="inline-block h-4 w-16 animate-pulse rounded bg-[#dce5ef] align-middle" />}
+              </p>
             </div>
 
             {cashierUrl && (
@@ -340,11 +423,12 @@ export default function ProductDetailPage() {
               </a>
             )}
 
-            {payStatus === "polling" && <p className="mt-4 text-center text-[13px] text-[#737d8f]">{st("等待支付确认中...")}</p>}
+            {!createdOrder && <p className="mt-4 text-center text-[13px] text-[#cbd5e1]">{st("正在生成二维码...")}</p>}
+            {createdOrder && payStatus === "polling" && <p className="mt-4 text-center text-[13px] text-[#cbd5e1]">{st("等待支付确认中...")}</p>}
             {payStatus === "paid" && (
               <div className="mt-4 text-center">
                 <p className="text-[14px] font-semibold text-[#08a678]">{st("支付成功，卡密已发出")}</p>
-                <Link to={`/orders/${createdOrder.order_no}/success`} className="mt-2 inline-flex text-[14px] font-semibold text-[#0e4beb]">{st("查看卡密")}</Link>
+                {createdOrder && <Link to={`/orders/${createdOrder.order_no}/success`} className="mt-2 inline-flex text-[14px] font-semibold text-[#7aa2ff]">{st("查看卡密")}</Link>}
               </div>
             )}
             {payStatus === "timeout" && <p className="mt-4 text-center text-[13px] text-[#f09e1f]">{st("支付确认超时，可在订单查询页查看最新状态")}</p>}

@@ -3,8 +3,8 @@ import CategoryIcon from "@/components/shop/CategoryIcon"
 import HomeHero from "@/components/shop/HomeHero"
 import MobilePhoneFrame from "@/components/shop/MobilePhoneFrame"
 import ProductCard from "@/components/shop/ProductCard"
-import { getCategories, getProducts } from "@/api/shop"
-import type { Category, Product } from "@/types/common"
+import { getCategories, getPinnedAnnouncement, getProducts } from "@/api/shop"
+import type { Announcement, Category, Product } from "@/types/common"
 import { useLanguage } from "@/context/LanguageContext"
 
 type HomeCategory = Pick<Category, "id" | "name" | "subtitle">
@@ -21,6 +21,48 @@ const categoryThemes = [
 const skeletonItems = Array.from({ length: 6 })
 const productSkeletonItems = Array.from({ length: 6 })
 const PAGE_SIZE = 12
+const PINNED_ANNOUNCEMENT_DISMISSALS_KEY = "pinned_announcement_dismissals"
+const PINNED_ANNOUNCEMENT_HIDE_MS = 24 * 60 * 60 * 1000
+
+function productAppearDelay(index: number) {
+  return index * 42
+}
+
+function pinnedAnnouncementDismissKey(announcement: Announcement) {
+  return `${announcement.id}:${announcement.updated_at || announcement.published_at || announcement.created_at || "initial"}`
+}
+
+function readDismissedPinnedAnnouncements() {
+  try {
+    const raw = window.localStorage.getItem(PINNED_ANNOUNCEMENT_DISMISSALS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, number>
+    const now = Date.now()
+    const activeEntries = Object.entries(parsed).filter(([, expiresAt]) => Number(expiresAt) > now)
+    const active = Object.fromEntries(activeEntries)
+    if (activeEntries.length !== Object.keys(parsed).length) {
+      window.localStorage.setItem(PINNED_ANNOUNCEMENT_DISMISSALS_KEY, JSON.stringify(active))
+    }
+    return active
+  } catch {
+    return {}
+  }
+}
+
+function isPinnedAnnouncementDismissed(announcement: Announcement) {
+  const dismissals = readDismissedPinnedAnnouncements()
+  return Number(dismissals[pinnedAnnouncementDismissKey(announcement)] || 0) > Date.now()
+}
+
+function dismissPinnedAnnouncementToday(announcement: Announcement) {
+  try {
+    const dismissals = readDismissedPinnedAnnouncements()
+    dismissals[pinnedAnnouncementDismissKey(announcement)] = Date.now() + PINNED_ANNOUNCEMENT_HIDE_MS
+    window.localStorage.setItem(PINNED_ANNOUNCEMENT_DISMISSALS_KEY, JSON.stringify(dismissals))
+  } catch {
+    // Ignore storage failures; the close action should still hide it for this render.
+  }
+}
 
 function MobileHomeSkeleton() {
   return (
@@ -157,17 +199,18 @@ export default function HomePage() {
   const [categoryPickerOpen, setCategoryPickerOpen] = useState(false)
   const [categories, setCategories] = useState<HomeCategory[]>([])
   const [products, setProducts] = useState<Product[]>([])
+  const [productAppearOrder, setProductAppearOrder] = useState<Record<number, number>>({})
   const [total, setTotal] = useState(0)
-  const [offset, setOffset] = useState(0)
+  const [productCursor, setProductCursor] = useState(0)
+  const [hasMoreProducts, setHasMoreProducts] = useState(false)
   const [isCategoriesLoading, setIsCategoriesLoading] = useState(true)
   const [isProductsLoading, setIsProductsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
-  const desktopProductGridRef = useRef<HTMLDivElement | null>(null)
+  const [pinnedAnnouncement, setPinnedAnnouncement] = useState<Announcement | null>(null)
   const mobileLoadMoreRef = useRef<HTMLDivElement | null>(null)
   const desktopLoadMoreRef = useRef<HTMLDivElement | null>(null)
   const productRequestRef = useRef(0)
   const productAbortRef = useRef<AbortController | null>(null)
-  const [desktopSidebarTop, setDesktopSidebarTop] = useState<number | null>(null)
   const primaryMobileCategoryIds = [1, 2, 3]
   const mobileCategories = [
     { id: 1, name: "VIP", subtitle: t("home.category.vip") },
@@ -175,7 +218,7 @@ export default function HomePage() {
     { id: 3, name: "APP", subtitle: t("home.category.app") },
   ].filter(category => categories.some(item => item.id === category.id))
   const mobileCategoryItems = [...mobileCategories, { id: null, name: "ALL", subtitle: t("home.category.more") }]
-  const hasMore = products.length < total
+  const hasMore = hasMoreProducts && products.length < total
 
   useEffect(() => {
     let ignore = false
@@ -201,7 +244,35 @@ export default function HomePage() {
     }
   }, [])
 
-  const loadProductsPage = useCallback(async (nextOffset: number, append = false) => {
+  useEffect(() => {
+    let ignore = false
+
+    getPinnedAnnouncement()
+      .then((announcement) => {
+        if (ignore || !announcement) return
+        if (!isPinnedAnnouncementDismissed(announcement)) {
+          setPinnedAnnouncement(announcement)
+        }
+      })
+      .catch(() => {
+        if (!ignore) setPinnedAnnouncement(null)
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!pinnedAnnouncement) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = "hidden"
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [pinnedAnnouncement])
+
+  const loadProductsPage = useCallback(async (afterId: number, append = false) => {
     const requestId = ++productRequestRef.current
     if (!append) {
       productAbortRef.current?.abort()
@@ -214,20 +285,25 @@ export default function HomePage() {
     try {
       const productPage = await getProducts({
         category_id: selectedCategory ?? undefined,
-        offset: nextOffset,
+        after_id: afterId,
         limit: PAGE_SIZE,
       }, controller.signal)
       if (requestId !== productRequestRef.current) return
       setProducts(current => append ? [...current, ...productPage.items] : productPage.items)
+      if (!append) {
+        setProductAppearOrder(Object.fromEntries(productPage.items.map((product, index) => [product.id, index])))
+      }
       setTotal(productPage.total)
-      setOffset(nextOffset + productPage.items.length)
+      setProductCursor(Number(productPage.next_cursor || productPage.items[productPage.items.length - 1]?.id || afterId))
+      setHasMoreProducts(Boolean(productPage.has_more))
     } catch {
       if (requestId !== productRequestRef.current) return
       if (controller.signal.aborted) return
       if (!append) {
         setProducts([])
         setTotal(0)
-        setOffset(0)
+        setProductCursor(0)
+        setHasMoreProducts(false)
       }
     } finally {
       if (requestId !== productRequestRef.current) return
@@ -241,8 +317,10 @@ export default function HomePage() {
 
   useEffect(() => {
     setProducts([])
+    setProductAppearOrder({})
     setTotal(0)
-    setOffset(0)
+    setProductCursor(0)
+    setHasMoreProducts(false)
     loadProductsPage(0)
     return () => {
       productAbortRef.current?.abort()
@@ -255,13 +333,13 @@ export default function HomePage() {
 
     const observer = new IntersectionObserver((entries) => {
       if (entries.some(entry => entry.isIntersecting) && !isProductsLoading && !isLoadingMore && hasMore) {
-        loadProductsPage(offset, true)
+        loadProductsPage(productCursor, true)
       }
     }, { rootMargin: "360px 0px" })
 
     targets.forEach(target => observer.observe(target))
     return () => observer.disconnect()
-  }, [hasMore, isProductsLoading, isLoadingMore, loadProductsPage, offset])
+  }, [hasMore, isProductsLoading, isLoadingMore, loadProductsPage, productCursor])
 
   const getProductTheme = (product: Product) => {
     const categoryIndex = categories.findIndex(category => category.id === product.category_id || category.name === product.category_name)
@@ -273,36 +351,58 @@ export default function HomePage() {
     setCategoryPickerOpen(false)
   }
 
-  useEffect(() => {
-    if (isProductsLoading && products.length === 0) return
-
-    const syncDesktopSidebarTop = () => {
-      if (window.innerWidth < 1024) {
-        setDesktopSidebarTop(null)
-        return
-      }
-
-      const firstCard = desktopProductGridRef.current?.querySelector("a.product-card")
-      const nextTop = firstCard?.getBoundingClientRect().top
-      if (typeof nextTop === "number") {
-        setDesktopSidebarTop(Math.round(nextTop))
-      }
-    }
-
-    syncDesktopSidebarTop()
-    const frame = window.requestAnimationFrame(syncDesktopSidebarTop)
-    window.addEventListener("resize", syncDesktopSidebarTop)
-
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.removeEventListener("resize", syncDesktopSidebarTop)
-    }
-  }, [products.length, isProductsLoading])
-
   const isMobileMoreActive = categoryPickerOpen || selectedCategory === null || !primaryMobileCategoryIds.includes(selectedCategory)
+
+  const dismissPinnedAnnouncement = () => {
+    if (pinnedAnnouncement) {
+      dismissPinnedAnnouncementToday(pinnedAnnouncement)
+    }
+    setPinnedAnnouncement(null)
+  }
 
   return (
     <>
+    {pinnedAnnouncement && (
+      <div
+        className="pinned-announcement-backdrop fixed inset-0 z-[998] flex items-center justify-center bg-[#0e131e]/45 px-5 backdrop-blur-[2px]"
+        onClick={() => setPinnedAnnouncement(null)}
+      >
+        <div
+          className="pinned-announcement-modal w-full max-w-[560px] overflow-hidden rounded-[26px] border border-white/70 bg-white shadow-[0_28px_80px_-28px_rgba(10,18,31,0.55)]"
+          onClick={event => event.stopPropagation()}
+        >
+          <div className="pinned-announcement-header relative bg-gradient-to-br from-[#eef5ff] via-white to-[#fff8e8] px-6 pb-5 pt-6 md:px-8 md:pt-7">
+            <button
+              type="button"
+              aria-label="关闭公告"
+              onClick={() => setPinnedAnnouncement(null)}
+              className="pinned-announcement-close absolute right-5 top-5 flex size-9 items-center justify-center rounded-full bg-white/85 text-[20px] font-semibold leading-none text-[#8b98ad] shadow-[0_10px_24px_-18px_rgba(10,18,31,0.55)] transition hover:bg-white hover:text-[#0e131e]"
+            >
+              ×
+            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="pinned-announcement-badge pinned-announcement-badge-primary rounded-full bg-warning-50 px-3 py-1 text-[13px] font-bold text-warning-600">首页置顶</span>
+              <span className="pinned-announcement-badge pinned-announcement-badge-secondary rounded-full bg-[#eef3ff] px-3 py-1 text-[13px] font-semibold text-[#0e4beb]">{pinnedAnnouncement.tag}</span>
+            </div>
+            <h2 className="pinned-announcement-title mt-4 text-[24px] font-bold leading-[32px] text-[#0e131e] md:text-[28px] md:leading-[36px]">{pinnedAnnouncement.title}</h2>
+            <p className="pinned-announcement-time mt-2 text-[13px] font-medium text-[#8b98ad]">{pinnedAnnouncement.published_at || pinnedAnnouncement.updated_at || ""}</p>
+          </div>
+          <div className="pinned-announcement-body px-6 py-5 md:px-8">
+            <div className="pinned-announcement-content max-h-[42vh] overflow-y-auto whitespace-pre-wrap text-[15px] leading-7 text-[#3f495b]">
+              {pinnedAnnouncement.content}
+            </div>
+            <button
+              type="button"
+              onClick={dismissPinnedAnnouncement}
+              className="pinned-announcement-action mt-6 h-12 w-full rounded-[16px] bg-[#0e4beb] text-[15px] font-bold text-white shadow-[0_14px_30px_-18px_rgba(14,75,235,0.8)] transition hover:bg-[#0b3fc8]"
+            >
+              今日不再显示
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
     <MobilePhoneFrame contentClassName="px-6 pt-2 pb-32" showHomeIndicator={false}>
       <HomeHero />
 
@@ -336,7 +436,13 @@ export default function HomePage() {
             ) : (
             <div className="grid gap-5">
               {products.map((product, index) => (
-                <ProductCard key={product.id} product={product} theme={getProductTheme(product)} appearDelayMs={Math.min(index, 11) * 45} />
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  theme={getProductTheme(product)}
+                  animateOnAppear={productAppearOrder[product.id] !== undefined}
+                  appearDelayMs={productAppearDelay(productAppearOrder[product.id] ?? index)}
+                />
               ))}
               {products.length === 0 && (
                 <EmptyProductsState compact />
@@ -472,11 +578,7 @@ export default function HomePage() {
         <div className="grid gap-[clamp(24px,1.8vw,40px)] lg:grid-cols-[clamp(190px,12vw,260px)_minmax(0,1fr)]">
           <div className="hidden min-w-0 lg:block">
           <aside
-            className="category-sidebar-scroll fixed z-20 -mt-2 grid w-[clamp(190px,12vw,260px)] content-start gap-[clamp(16px,1vw,24px)] overflow-y-auto pb-2 pr-2 pt-2"
-            style={{
-              top: desktopSidebarTop ?? "calc(69px + clamp(28px, 1.8vw, 48px))",
-              maxHeight: desktopSidebarTop ? `calc(100vh - ${desktopSidebarTop}px - 24px)` : "calc(100vh - 69px - clamp(28px, 1.8vw, 48px) - 24px)",
-            }}
+            className="category-sidebar-scroll fixed top-[calc(clamp(54px,3.38vw,96px)+clamp(28px,1.8vw,48px))] z-20 grid max-h-[calc(100vh-clamp(54px,3.38vw,96px)-clamp(28px,1.8vw,48px)-24px)] w-[clamp(190px,12vw,260px)] content-start gap-[clamp(16px,1vw,24px)] overflow-y-auto pb-2 pr-2"
           >
             <button
               type="button"
@@ -513,14 +615,20 @@ export default function HomePage() {
 
           <section className="min-w-0">
             {isProductsLoading ? (
-              <div ref={desktopProductGridRef}>
+              <div>
                 <DesktopProductSkeleton />
               </div>
             ) : (
-            <div ref={desktopProductGridRef} className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3 xl:gap-[clamp(18px,1.21vw,34px)]">
+            <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3 xl:gap-[clamp(18px,1.21vw,34px)]">
               {products.map((product, index) => {
                 return (
-                  <ProductCard key={product.id} product={product} theme={getProductTheme(product)} appearDelayMs={Math.min(index, 11) * 45} />
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    theme={getProductTheme(product)}
+                    animateOnAppear={productAppearOrder[product.id] !== undefined}
+                    appearDelayMs={productAppearDelay(productAppearOrder[product.id] ?? index)}
+                  />
                 )
               })}
               {products.length === 0 && (

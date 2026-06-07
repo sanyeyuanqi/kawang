@@ -3,6 +3,20 @@ import { Modal } from "@/components/ui/Modal"
 
 const CODE_VALUE_MAX_LENGTH = 1000
 
+function parseCodeLines(value: string) {
+  const lines = value
+    .split(/\r\n|\n|\r/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const uniqueLines = Array.from(new Set(lines))
+
+  return {
+    lines,
+    uniqueLines,
+    duplicateCount: lines.length - uniqueLines.length,
+  }
+}
+
 export interface CodeKeyProductOption {
   id: number
   name: string
@@ -28,15 +42,13 @@ export default function CodeKeyImportModal({ open, products, defaultProductId, l
     }
   }, [defaultProductId, open, products])
 
-  const codeCount = codes.split(/\r?\n/).map((item) => item.trim()).filter(Boolean).length
-  const overLength = codes
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .some((item) => item.length > CODE_VALUE_MAX_LENGTH)
+  const parsedCodes = parseCodeLines(codes)
+  const codeCount = parsedCodes.uniqueLines.length
+  const overLength = parsedCodes.uniqueLines.some((item) => item.length > CODE_VALUE_MAX_LENGTH)
 
   const submit = async () => {
-    if (!productId || !codes.trim() || overLength) return
-    await onSubmit({ product_id: productId, codes })
+    if (!productId || codeCount === 0 || overLength) return
+    await onSubmit({ product_id: productId, codes: parsedCodes.uniqueLines.join("\n") })
   }
 
   return (
@@ -65,12 +77,16 @@ export default function CodeKeyImportModal({ open, products, defaultProductId, l
             value={codes}
             onChange={(event) => setCodes(event.target.value)}
             placeholder={"每行一条卡密\nVIP-MONTH-XXXX-XXXX\nVIP-MONTH-YYYY-YYYY"}
-            className="h-44 w-full resize-none rounded-[14px] border border-[#dfe6ef] bg-[#fbfdff] p-3 font-mono text-14 outline-none focus:border-primary-500"
+            wrap="off"
+            spellCheck={false}
+            className="h-44 w-full resize-none overflow-auto whitespace-pre rounded-[14px] border border-[#dfe6ef] bg-[#fbfdff] p-3 font-mono text-14 outline-none focus:border-primary-500"
           />
         </label>
 
         <div className="rounded-[12px] bg-[#eef3ff] px-4 py-3 text-13 font-medium text-primary-600">
-          当前将导入 {codeCount} 条卡密，单条最长 {CODE_VALUE_MAX_LENGTH} 个字符，系统会自动过滤空行和重复行。
+          当前将导入 {codeCount} 条卡密。每行仅识别一条，空行会被忽略
+          {parsedCodes.duplicateCount > 0 ? `，已过滤 ${parsedCodes.duplicateCount} 条重复卡密` : ""}
+          ，单条最长 {CODE_VALUE_MAX_LENGTH} 个字符。
         </div>
         {overLength && (
           <p className="rounded-[12px] bg-danger-50 px-4 py-3 text-13 font-semibold text-danger-500">
@@ -82,7 +98,7 @@ export default function CodeKeyImportModal({ open, products, defaultProductId, l
           <button type="button" onClick={onClose} disabled={loading} className="h-11 flex-1 rounded-[12px] border border-[#dfe6ef] bg-white text-14 font-semibold text-[#4f5b70] disabled:opacity-60">
             取消
           </button>
-          <button type="button" onClick={submit} disabled={loading || !productId || !codes.trim() || overLength} className="h-11 flex-1 rounded-[12px] bg-primary-500 text-14 font-semibold text-white shadow-lg shadow-primary-500/20 disabled:cursor-not-allowed disabled:opacity-50">
+          <button type="button" onClick={submit} disabled={loading || !productId || codeCount === 0 || overLength} className="h-11 flex-1 rounded-[12px] bg-primary-500 text-14 font-semibold text-white shadow-lg shadow-primary-500/20 disabled:cursor-not-allowed disabled:opacity-50">
             {loading ? "导入中..." : "确认导入"}
           </button>
         </div>

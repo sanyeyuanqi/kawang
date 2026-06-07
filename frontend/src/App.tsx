@@ -4,6 +4,7 @@ import { AuthProvider } from "@/context/AuthContext"
 import { LanguageProvider } from "@/context/LanguageContext"
 import { ThemeProvider } from "@/context/ThemeContext"
 import { ToastProvider } from "@/components/ui/Toast"
+import { ButtonClickSound } from "@/components/ui/ButtonClickSound"
 import { ProtectedRoute, AdminRoute } from "@/components/auth/ProtectedRoute"
 import ShopLayout from "@/layouts/ShopLayout"
 import AdminLayout from "@/layouts/AdminLayout"
@@ -25,6 +26,7 @@ const AdminProductsPage = lazy(() => import("@/pages/admin/AdminProductsPage"))
 const AdminCategoriesPage = lazy(() => import("@/pages/admin/AdminCategoriesPage"))
 const AdminCodeKeysPage = lazy(() => import("@/pages/admin/AdminCodeKeysPage"))
 const AdminOrdersPage = lazy(() => import("@/pages/admin/AdminOrdersPage"))
+const AdminAnnouncementsPage = lazy(() => import("@/pages/admin/AdminAnnouncementsPage"))
 
 function RouteFallback() {
   return (
@@ -41,6 +43,7 @@ export default function App() {
         <LanguageProvider>
           <AuthProvider>
             <ToastProvider>
+              <ButtonClickSound />
               <Suspense fallback={<RouteFallback />}>
                 <Routes>
                   <Route element={<ShopLayout />}>
@@ -50,12 +53,12 @@ export default function App() {
                     <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                     <Route path="/products/:id" element={<ProductDetailPage />} />
                     <Route path="/orders/:orderNo/pay" element={<PayPage />} />
+                    <Route path="/orders/:orderNo/success" element={<SuccessPage />} />
                     <Route path="/orders/query" element={<OrderQueryPage />} />
                     <Route path="/announcements" element={<AnnouncementsPage />} />
                     <Route path="/about" element={<AboutPage />} />
                     <Route element={<ProtectedRoute />}>
                       <Route path="/profile" element={<ProfilePage />} />
-                      <Route path="/orders/:orderNo/success" element={<SuccessPage />} />
                     </Route>
                   </Route>
 
@@ -67,6 +70,7 @@ export default function App() {
                       <Route path="/admin/categories" element={<AdminCategoriesPage />} />
                       <Route path="/admin/code-keys" element={<AdminCodeKeysPage />} />
                       <Route path="/admin/orders" element={<AdminOrdersPage />} />
+                      <Route path="/admin/announcements" element={<AdminAnnouncementsPage />} />
                     </Route>
                   </Route>
 

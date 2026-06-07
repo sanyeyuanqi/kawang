@@ -8,7 +8,7 @@ export default function HomeHero() {
       <div>
         <h1 className="text-[38px] font-bold leading-tight text-white md:text-[clamp(35px,2.18vw,62px)]">{t("brand")}</h1>
         <p className="mt-1 max-w-[clamp(416px,25.96vw,737px)] text-[16px] leading-7 text-[#c7d6eb] md:mt-[clamp(4px,0.28vw,8px)] md:text-[clamp(14px,0.85vw,24px)] md:leading-normal">
-          {t("common.autoDelivery")} · {t("common.supportOnline")} · {t("common.reliable")}
+          {t("common.noLoginPurchase")} · {t("common.supportOnline")} · {t("common.reliable")}
         </p>
         <div className="mt-7 flex flex-wrap gap-3 md:mt-[clamp(14px,0.85vw,24px)] md:gap-[clamp(8px,0.49vw,14px)]">
           <span className="rounded-full bg-[#eafff7] px-5 py-2 text-[14px] font-medium text-[#08a678] md:bg-[#ebf2ff] md:px-[clamp(11px,0.7vw,20px)] md:py-[clamp(4px,0.28vw,8px)] md:text-[clamp(11px,0.46vw,13px)] md:text-[#0e4beb]">{t("home.stockEnough")}</span>

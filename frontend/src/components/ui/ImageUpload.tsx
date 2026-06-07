@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { cn, resolveAssetUrl } from "@/lib/utils"
 
 interface Props {
@@ -22,10 +22,14 @@ export function ImageUpload({
 }: Props) {
   const [preview, setPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [imageFailed, setImageFailed] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const maxBytes = maxSizeMB * 1024 * 1024
-  const handleFile = useCallback((file: File) => { setError(null); const allowed = accept.split(",").map(t => t.trim()); if (!allowed.includes(file.type)) { setError("仅支持 JPG/PNG/WebP/GIF 图片"); return }; if (file.size > maxBytes) { setError(`图片大小不能超过 ${maxSizeMB}MB`); return }; setPreview(URL.createObjectURL(file)); onChange?.(file) }, [accept, maxBytes, maxSizeMB, onChange])
+  useEffect(() => {
+    setImageFailed(false)
+  }, [preview, value])
+  const handleFile = useCallback((file: File) => { setError(null); setImageFailed(false); const allowed = accept.split(",").map(t => t.trim()); if (!allowed.includes(file.type)) { setError("仅支持 JPG/PNG/WebP/GIF 图片"); return }; if (file.size > maxBytes) { setError(`图片大小不能超过 ${maxSizeMB}MB`); return }; setPreview(URL.createObjectURL(file)); onChange?.(file) }, [accept, maxBytes, maxSizeMB, onChange])
   const displayUrl = preview || resolveAssetUrl(value) || null
   return (
     <div className={cn("space-y-2", className)}>
@@ -40,9 +44,9 @@ export function ImageUpload({
           isDragOver ? "border-primary-500 bg-primary-50" : "border-gray-300 bg-white hover:border-gray-400"
         )}
       >
-        {displayUrl ? (
+        {displayUrl && !imageFailed ? (
           <div className="group relative h-full w-full">
-            <img src={displayUrl} alt="preview" className="h-full w-full object-cover" />
+            <img src={displayUrl} alt="preview" className="h-full w-full object-cover" onError={() => setImageFailed(true)} />
             <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
               <button type="button" onClick={e => { e.stopPropagation(); setPreview(null); onRemove?.() }} className="rounded-lg bg-danger-500 px-3 py-1.5 text-13 text-white">删除</button>
             </div>

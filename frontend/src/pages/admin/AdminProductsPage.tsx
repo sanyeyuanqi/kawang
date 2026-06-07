@@ -21,6 +21,7 @@ export default function AdminProductsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AdminProductItem | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [savingSortId, setSavingSortId] = useState<number | null>(null)
+  const [failedImageIds, setFailedImageIds] = useState<Set<number>>(() => new Set())
 
   const page = Math.floor(offset / PAGE_SIZE) + 1
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -32,6 +33,7 @@ export default function AdminProductsPage() {
       const res = await api.get("/admin/products", { params: { offset, limit: PAGE_SIZE } })
       setItems(res.data.data.items)
       setTotal(res.data.data.total)
+      setFailedImageIds(new Set())
     } catch (err: any) {
       setError(err.response?.data?.msg || "商品列表加载失败")
     } finally {
@@ -176,7 +178,21 @@ export default function AdminProductsPage() {
                   <td className="px-4 py-5">
                     <div className="flex items-center gap-3">
                       <div className="grid h-[54px] w-24 shrink-0 place-items-center overflow-hidden rounded-[12px] bg-[#eef3ff] text-15 font-bold text-primary-500">
-                        {item.cover_image ? <img src={resolveAssetUrl(item.cover_image)} alt="" className="h-full w-full object-cover" /> : item.name.slice(0, 1)}
+                        {item.cover_image && !failedImageIds.has(item.id) ? (
+                          <img
+                            src={resolveAssetUrl(item.cover_image)}
+                            alt={item.name}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                            onError={() => {
+                              setFailedImageIds((current) => {
+                                const next = new Set(current)
+                                next.add(item.id)
+                                return next
+                              })
+                            }}
+                          />
+                        ) : item.name.slice(0, 1)}
                       </div>
                       <div className="min-w-0">
                         <p className="truncate font-semibold text-[#111827]">{item.name}</p>

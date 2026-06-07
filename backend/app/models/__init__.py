@@ -5,10 +5,11 @@ from app.models.code_key import CodeKey, CodeKeyStatus
 from app.models.order import Order, OrderStatus
 from app.models.user import User
 from app.models.email_verification import EmailVerification, VerificationPurpose
+from app.models.announcement import Announcement
 
 __all__ = [
     "ShopConfig", "Category", "Product",
     "CodeKey", "CodeKeyStatus",
     "Order", "OrderStatus", "User",
-    "EmailVerification", "VerificationPurpose",
+    "EmailVerification", "VerificationPurpose", "Announcement",
 ]

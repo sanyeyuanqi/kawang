@@ -9,6 +9,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     APP_NAME: str = "Kawang Shop"
     DEBUG: bool = False
+    SQL_ECHO: bool = False
     SITE_URL: str = "http://localhost:8000"
 
     # Database
@@ -31,6 +32,7 @@ class Settings(BaseSettings):
     HAOZPAY_PLATFORM_PUBLIC_KEY: str = ""
     HAOZPAY_API_BASE_URL: str = "https://gate.haozpay.com"
     HAOZPAY_DEBUG: bool = False
+    HAOZPAY_QUERY_ENABLED: bool = False
 
     # CORS
     CORS_ORIGINS: list[str] = [

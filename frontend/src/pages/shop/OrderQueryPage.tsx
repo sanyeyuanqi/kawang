@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { Link } from "react-router-dom"
 import api from "@/api/client"
 import { formatPrice } from "@/lib/utils"
 import MobilePhoneFrame from "@/components/shop/MobilePhoneFrame"
@@ -18,10 +19,6 @@ interface OrderRecord {
 
 const PAGE_SIZE = 10
 
-function normalizeCode(codeValue: string) {
-  return codeValue.replace(/^卡密\d*[：:]\s*/, "")
-}
-
 function getStatusMeta(status: string, st: (text: string) => string) {
   const normalized = status?.toLowerCase()
   if (normalized === "paid" || status === "已支付") return { label: st("已支付"), className: "bg-[#e8faf4] text-[#08a678] border-[#c9f0e3]" }
@@ -33,30 +30,39 @@ function getStatusMeta(status: string, st: (text: string) => string) {
   return { label: status || st("未知状态"), className: "bg-[#f2f5f9] text-[#6b7990] border-[#dfe5ed]" }
 }
 
+function canViewOrderDetail(status: string) {
+  const normalized = status?.toLowerCase()
+  return normalized === "paid" || normalized === "delivered" || status === "已支付" || status === "已发卡"
+}
+
 export default function OrderQueryPage() {
   const { st } = useLanguage()
   const [contactInfo, setContactInfo] = useState("")
   const [orders, setOrders] = useState<OrderRecord[]>([])
-  const [total, setTotal] = useState(0)
   const [offset, setOffset] = useState(0)
+  const [afterId, setAfterId] = useState(0)
+  const [afterCreatedAt, setAfterCreatedAt] = useState<string | null>(null)
+  const [hasMoreOrders, setHasMoreOrders] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState("")
   const [searched, setSearched] = useState(false)
-  const [copiedOrderNo, setCopiedOrderNo] = useState("")
   const loadMoreRef = useRef<HTMLDivElement | null>(null)
 
-  const hasMore = searched && orders.length < total
+  const hasMore = searched && hasMoreOrders
 
   const parseOrderPayload = (data: any) => {
     if (Array.isArray(data)) {
-      return { items: data as OrderRecord[], total: data.length, offset: 0, limit: data.length || PAGE_SIZE }
+      return { items: data as OrderRecord[], total: data.length, offset: 0, limit: data.length || PAGE_SIZE, hasMore: false, nextCursor: 0, nextCursorCreatedAt: null }
     }
     return {
       items: (data?.items || []) as OrderRecord[],
       total: Number(data?.total || 0),
       offset: Number(data?.offset || 0),
       limit: Number(data?.limit || PAGE_SIZE),
+      hasMore: Boolean(data?.has_more),
+      nextCursor: Number(data?.next_cursor || data?.after_cursor || 0),
+      nextCursorCreatedAt: data?.next_cursor_created_at || data?.after_cursor_created_at || null,
     }
   }
 
@@ -67,12 +73,16 @@ export default function OrderQueryPage() {
       const res = await api.post("/orders/query", {
         contact_info: contactInfo.trim(),
         offset: nextOffset,
+        after_id: append ? afterId : 0,
+        after_created_at: append ? afterCreatedAt : undefined,
         limit: PAGE_SIZE,
       })
       const payload = parseOrderPayload(res.data.data)
       setOrders(prev => append ? [...prev, ...payload.items] : payload.items)
-      setTotal(payload.total)
       setOffset(payload.offset + payload.items.length)
+      setAfterId(payload.nextCursor)
+      setAfterCreatedAt(payload.nextCursorCreatedAt)
+      setHasMoreOrders(payload.hasMore)
     } catch (err: any) {
       setError(err.response?.data?.msg || st("查询失败，请稍后重试"))
     } finally {
@@ -87,15 +97,19 @@ export default function OrderQueryPage() {
     if (!contactInfo.trim()) {
       setSearched(false)
       setOrders([])
-      setTotal(0)
       setOffset(0)
+      setAfterId(0)
+      setAfterCreatedAt(null)
+      setHasMoreOrders(false)
       setError(st("请输入联系方式 / 订单号"))
       return
     }
     setSearched(true)
     setOrders([])
-    setTotal(0)
     setOffset(0)
+    setAfterId(0)
+    setAfterCreatedAt(null)
+    setHasMoreOrders(false)
     await loadOrdersPage(0)
   }
 
@@ -115,18 +129,6 @@ export default function OrderQueryPage() {
 
   const visibleOrders = searched ? orders : []
   const primaryOrder = visibleOrders[0]
-
-  const copyCodes = async (order: OrderRecord) => {
-    const text = order.codes.map(code => code.code_value).join("\n")
-    if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedOrderNo(order.order_no)
-      setTimeout(() => setCopiedOrderNo(""), 1600)
-    } catch {
-      setCopiedOrderNo("")
-    }
-  }
 
   return (
     <>
@@ -159,20 +161,21 @@ export default function OrderQueryPage() {
               <span className={"rounded-full border px-4 py-2 text-[13px] font-medium leading-none " + getStatusMeta(primaryOrder.status, st).className}>{getStatusMeta(primaryOrder.status, st).label}</span>
             </div>
             <p className="mt-3 text-[15px] text-[#6b7990]">{st("订单号")} {primaryOrder.order_no} · {formatPrice(primaryOrder.total_amount)}</p>
-            <div className="relative mt-6 rounded-[14px] bg-[#ebf2ff] px-4 py-3 pr-14 text-[15px] font-bold leading-[22px] text-[#0e4beb]">
-              <div className="min-w-0">
-                {primaryOrder.codes.length > 0 ? primaryOrder.codes.map((code, index) => (
-                  <p key={code.id} className="break-all">{st("卡密")}{index + 1}：{normalizeCode(code.code_value)}</p>
-                )) : <p>{st("订单暂未发卡")}</p>}
+            {canViewOrderDetail(primaryOrder.status) && (
+              <div className="mt-6 rounded-[14px] bg-[#ebf2ff] px-4 py-4 text-[15px] leading-[22px] text-[#0e4beb]">
+                <div className="space-y-4">
+                  <p className="font-medium">{st("订单已支付，点击查看详情获取卡密。")}</p>
+                  <Link to={`/orders/${primaryOrder.order_no}/success`} className="flex h-[46px] w-full items-center justify-center rounded-[13px] bg-[#0e4beb] text-[17px] font-semibold text-white shadow-[0_10px_24px_-12px_rgba(14,75,235,0.65)]">
+                    {st("查看详情")}
+                  </Link>
+                </div>
               </div>
-              <button onClick={() => copyCodes(primaryOrder)} className="absolute right-4 top-3 grid size-10 place-items-center rounded-[10px] bg-[#2663eb] text-[18px] text-white" aria-label={st("复制卡密")}>▣</button>
-            </div>
-            {copiedOrderNo === primaryOrder.order_no && <p className="mt-3 text-right text-[13px] font-semibold text-[#0e4beb]">{st("已复制")}</p>}
+            )}
           </section>
         ) : null}
       </MobilePhoneFrame>
 
-      <div className="figma-web-container hidden min-h-screen pb-24 pt-8 md:block md:pt-[clamp(47px,2.96vw,84px)]">
+      <div className="figma-web-container hidden min-h-[calc(100dvh-clamp(54px,3.38vw,96px))] pb-24 pt-8 md:block md:pt-[clamp(47px,2.96vw,84px)]">
         <div className="order-query-grid">
           <div className="order-query-form-sticky space-y-10 md:space-y-[clamp(23px,1.41vw,40px)]">
             <section className="rounded-[30px] border border-[#dfe5ed] bg-white p-6 shadow-[0_16px_36px_-8px_rgba(10,18,31,0.1)] md:min-h-[clamp(300px,18.5vw,520px)] md:rounded-[clamp(19px,1.2vw,34px)] md:p-[clamp(34px,2.11vw,60px)]">
@@ -198,7 +201,7 @@ export default function OrderQueryPage() {
             <div className="flex flex-wrap items-center gap-5 md:gap-[clamp(8px,0.78vw,22px)]">
               <h2 className="text-[28px] font-bold text-[#0e131e] md:text-[clamp(17px,1.06vw,30px)]">{st("查询结果")}</h2>
               {visibleOrders.length > 0 && (
-                <p className="text-[15px] text-[#737d8f] md:text-[clamp(10px,0.53vw,15px)]">{st("共查询到")} {total} {st("条购买记录")}</p>
+                <p className="text-[15px] text-[#737d8f] md:text-[clamp(10px,0.53vw,15px)]">{st("已加载")} {visibleOrders.length} {st("条购买记录")}</p>
               )}
             </div>
             {searched && !loading && orders.length === 0 && (
@@ -219,25 +222,15 @@ export default function OrderQueryPage() {
 
                   <div className="my-5 h-px bg-[#dbe5f5] md:my-[clamp(12px,0.78vw,22px)]" />
 
-                  {order.codes.length > 0 ? (
-                    <div className="relative rounded-[14px] border border-[#d6e0f0] bg-[#f8fafe] px-4 py-3 pr-16 md:min-h-[clamp(46px,2.89vw,82px)] md:rounded-[clamp(8px,0.49vw,14px)] md:px-[clamp(8px,0.49vw,14px)] md:py-[clamp(7px,0.42vw,12px)] md:pr-[clamp(46px,3vw,72px)]">
-                      <div className="min-w-0 space-y-1 font-mono text-[15px] font-medium leading-6 text-[#111827] md:text-[clamp(10px,0.63vw,18px)] md:leading-[1.35]">
-                        {order.codes.map(code => (
-                          <p key={code.id} className="break-all">{code.code_value}</p>
-                        ))}
-                      </div>
-                      <div className="absolute right-4 top-3 md:right-[clamp(8px,0.6vw,14px)] md:top-[clamp(7px,0.45vw,10px)]">
-                        <button onClick={() => copyCodes(order)} className="grid h-[38px] w-[36px] place-items-center rounded-[10px] bg-[#2663eb] md:h-[clamp(30px,1.75vw,40px)] md:w-[clamp(28px,1.65vw,38px)] md:rounded-[clamp(8px,0.52vw,11px)]" aria-label={st("复制卡密")}>
-                          <span className="relative block h-[16px] w-[13px] md:h-[clamp(13px,0.78vw,17px)] md:w-[clamp(11px,0.62vw,14px)]">
-                            <span className="absolute left-0 top-0 h-[12px] w-[9px] rounded-[2px] border border-white md:h-[clamp(10px,0.59vw,13px)] md:w-[clamp(8px,0.44vw,10px)]" />
-                            <span className="absolute bottom-0 right-0 h-[12px] w-[9px] rounded-[2px] border border-white bg-[#2663eb] md:h-[clamp(10px,0.59vw,13px)] md:w-[clamp(8px,0.44vw,10px)]" />
-                          </span>
-                        </button>
-                        {copiedOrderNo === order.order_no && <span className="absolute right-0 top-full mt-1 whitespace-nowrap text-[12px] font-semibold text-[#0e4beb]">{st("已复制")}</span>}
-                      </div>
+                  {canViewOrderDetail(order.status) && (
+                    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[14px] border border-[#d6e0f0] bg-[#f8fafe] px-4 py-4 md:min-h-[clamp(46px,2.89vw,82px)] md:rounded-[clamp(8px,0.49vw,14px)] md:px-[clamp(12px,0.7vw,20px)] md:py-[clamp(10px,0.7vw,20px)]">
+                      <p className="min-w-0 text-[15px] font-medium leading-6 text-[#5c697d] md:text-[clamp(10px,0.56vw,16px)]">
+                        {st("订单已支付，点击查看详情获取卡密。")}
+                      </p>
+                      <Link to={`/orders/${order.order_no}/success`} className="inline-flex h-[38px] shrink-0 items-center justify-center rounded-[10px] bg-[#2663eb] px-5 text-[14px] font-semibold text-white shadow-[0_10px_22px_-14px_rgba(14,75,235,0.58)] md:h-[clamp(30px,1.75vw,40px)] md:rounded-[clamp(8px,0.52vw,11px)] md:px-[clamp(14px,0.84vw,24px)] md:text-[clamp(10px,0.53vw,15px)]">
+                        {st("查看详情")}
+                      </Link>
                     </div>
-                  ) : (
-                    <div className="rounded-[14px] border border-[#d6e0f0] bg-[#f8fafe] p-4 text-[16px] text-[#6b7990]">{st("订单暂未发卡")}</div>
                   )}
 
                   <div className="mt-5 flex items-end justify-between gap-4 md:mt-[clamp(12px,0.78vw,22px)]">

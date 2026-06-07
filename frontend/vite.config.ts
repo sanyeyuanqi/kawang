@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react"
 import path from "path"
 import http from "node:http"
 
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://127.0.0.1:8000"
+
 const apiProxyAgent = new http.Agent({
   keepAlive: true,
   keepAliveMsecs: 30_000,
@@ -16,15 +18,19 @@ export default defineConfig({
     alias: { "@": path.resolve(__dirname, "./src") },
   },
   server: {
-    port: 5173,
+    host: "127.0.0.1",
+    port: 8080,
+    strictPort: true,
+    allowedHosts: [".ngrok-free.dev", "localhost", "127.0.0.1"],
     proxy: {
       "/api": {
-        target: "http://127.0.0.1:8080",
+        target: apiProxyTarget,
         changeOrigin: true,
         agent: apiProxyAgent,
+        ws: true,
       },
       "/static": {
-        target: "http://127.0.0.1:8080",
+        target: apiProxyTarget,
         changeOrigin: true,
         agent: apiProxyAgent,
       },

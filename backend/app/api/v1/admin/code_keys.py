@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_admin
@@ -63,7 +63,7 @@ def _code_dict(code: CodeKey, contact_info: str | None = None, product_name: str
     return {
         "id": code.id,
         "product_id": code.product_id,
-        "product_name": product_name or (code.product.name if code.product else None),
+        "product_name": product_name,
         "code_value": code.code_value,
         "status": code.status.value if hasattr(code.status, "value") else code.status,
         "order_id": code.order_id,
@@ -84,28 +84,48 @@ async def stock_summary(
     if cached is not None:
         return {"code": 200, "msg": "success", "data": cached}
 
-    code_join = and_(CodeKey.product_id == Product.id, CodeKey.is_deleted == False)
+    code_summary = (
+        select(
+            CodeKey.product_id.label("product_id"),
+            func.sum(case((CodeKey.status == CodeKeyStatus.UNUSED, 1), else_=0)).label("unused_count"),
+            func.sum(case((CodeKey.status == CodeKeyStatus.ASSIGNED, 1), else_=0)).label("assigned_count"),
+            func.count(CodeKey.id).label("total_count"),
+            func.max(CodeKey.created_at).label("last_import_time"),
+        )
+        .where(CodeKey.is_deleted == False)
+        .group_by(CodeKey.product_id)
+        .subquery()
+    )
     stmt = (
         select(
             Product.id.label("product_id"),
             Product.name.label("product_name"),
             Product.sort_order,
             Category.name.label("category_name"),
-            func.sum(case((CodeKey.status == CodeKeyStatus.UNUSED, 1), else_=0)).label("unused_count"),
-            func.sum(case((CodeKey.status == CodeKeyStatus.ASSIGNED, 1), else_=0)).label("assigned_count"),
-            func.count(CodeKey.id).label("total_count"),
-            func.max(CodeKey.created_at).label("last_import_time"),
+            func.coalesce(code_summary.c.unused_count, 0).label("unused_count"),
+            func.coalesce(code_summary.c.assigned_count, 0).label("assigned_count"),
+            func.coalesce(code_summary.c.total_count, 0).label("total_count"),
+            code_summary.c.last_import_time,
         )
         .outerjoin(Category, Product.category_id == Category.id)
-        .outerjoin(CodeKey, code_join)
+        .outerjoin(code_summary, code_summary.c.product_id == Product.id)
         .where(Product.is_deleted == False)
-        .group_by(Product.id, Product.name, Product.sort_order, Category.name)
         .order_by(Product.sort_order.desc(), Product.id.desc())
         .offset(offset)
         .limit(limit)
     )
     rows = await db.execute(stmt)
     total = (await db.execute(select(func.count(Product.id)).where(Product.is_deleted == False))).scalar() or 0
+    stats_row = (
+        await db.execute(
+            select(
+                func.coalesce(func.sum(case((CodeKey.status == CodeKeyStatus.UNUSED, 1), else_=0)), 0).label("unused_count"),
+                func.coalesce(func.sum(case((CodeKey.status == CodeKeyStatus.ASSIGNED, 1), else_=0)), 0).label("assigned_count"),
+                func.count(CodeKey.id).label("total_count"),
+            )
+            .where(CodeKey.is_deleted == False)
+        )
+    ).one()
     data = {
         "items": [
             {
@@ -124,6 +144,12 @@ async def stock_summary(
         "total": total,
         "offset": offset,
         "limit": limit,
+        "stats": {
+            "products": int(total or 0),
+            "unused": int(stats_row.unused_count or 0),
+            "assigned": int(stats_row.assigned_count or 0),
+            "total": int(stats_row.total_count or 0),
+        },
     }
     await cache_set_json(cache_key, data, STOCK_CACHE_TTL_SECONDS)
     return {"code": 200, "msg": "success", "data": data}

@@ -18,6 +18,9 @@ api_router.include_router(orders_router, tags=["Orders"])
 from app.api.v1.auth import router as auth_router
 api_router.include_router(auth_router, tags=["Auth"])
 
+from app.api.v1.announcements import router as announcements_router
+api_router.include_router(announcements_router, tags=["Announcements"])
+
 # Admin routes
 from app.api.v1.admin.router import admin_router
 api_router.include_router(admin_router, tags=["Admin"])

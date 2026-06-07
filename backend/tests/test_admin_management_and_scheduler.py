@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 import time
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import settings
 from app.database import async_session_factory
@@ -162,8 +162,116 @@ async def test_admin_order_filter_and_export(client: AsyncClient, admin_token: s
     assert b"order_no" in export_response.content
 
 
+async def test_admin_announcement_crud_and_public_visibility(client: AsyncClient, admin_token: str) -> None:
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    suffix = time.time_ns()
+    title = f"自动化公告-{suffix}"
+
+    create_response = await client.post(
+        "/admin/announcements",
+        json={
+            "title": title,
+            "tag": "自动化测试",
+            "content": "用于验证公告发布、下线和删除流程。",
+            "sort_order": 99,
+            "is_published": True,
+            "is_pinned": True,
+        },
+        headers=headers,
+    )
+    assert create_response.status_code == 200
+    announcement_id = create_response.json()["data"]["id"]
+    assert create_response.json()["data"]["is_pinned"] is True
+
+    pinned_response = await client.get("/announcements/pinned")
+    assert pinned_response.status_code == 200
+    assert pinned_response.json()["data"]["id"] == announcement_id
+
+    filtered_response = await client.get(
+        "/admin/announcements",
+        params={"q": title, "status": "published"},
+        headers=headers,
+    )
+    assert filtered_response.status_code == 200
+    filtered_payload = filtered_response.json()["data"]
+    assert filtered_payload["total"] == 1
+    assert filtered_payload["stats"]["published"] == 1
+    assert filtered_payload["stats"]["draft"] == 0
+    assert filtered_payload["items"][0]["id"] == announcement_id
+    assert filtered_payload["items"][0]["is_pinned"] is True
+
+    second_title = f"自动化置顶公告-{suffix}"
+    second_create_response = await client.post(
+        "/admin/announcements",
+        json={
+            "title": second_title,
+            "tag": "置顶测试",
+            "content": "用于验证同一时间只有一条首页置顶公告。",
+            "sort_order": 98,
+            "is_published": True,
+            "is_pinned": True,
+        },
+        headers=headers,
+    )
+    assert second_create_response.status_code == 200
+    second_announcement_id = second_create_response.json()["data"]["id"]
+
+    pinned_after_second = await client.get("/announcements/pinned")
+    assert pinned_after_second.status_code == 200
+    assert pinned_after_second.json()["data"]["id"] == second_announcement_id
+
+    first_after_second = await client.get(
+        "/admin/announcements",
+        params={"q": title, "status": "published"},
+        headers=headers,
+    )
+    assert first_after_second.status_code == 200
+    assert first_after_second.json()["data"]["items"][0]["is_pinned"] is False
+
+    public_response = await client.get("/announcements")
+    assert public_response.status_code == 200
+    assert any(item["id"] == announcement_id for item in public_response.json()["data"])
+
+    update_response = await client.put(
+        f"/admin/announcements/{announcement_id}",
+        json={"is_published": False, "title": f"{title}-已更新"},
+        headers=headers,
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["data"]["is_published"] is False
+    assert update_response.json()["data"]["is_pinned"] is False
+    assert update_response.json()["data"]["published_at"] is None
+
+    draft_response = await client.get(
+        "/admin/announcements",
+        params={"q": f"{title}-已更新", "status": "draft"},
+        headers=headers,
+    )
+    assert draft_response.status_code == 200
+    draft_payload = draft_response.json()["data"]
+    assert draft_payload["total"] == 1
+    assert draft_payload["stats"]["published"] == 0
+    assert draft_payload["stats"]["draft"] == 1
+    assert draft_payload["items"][0]["id"] == announcement_id
+
+    public_after_unpublish = await client.get("/announcements")
+    assert all(item["id"] != announcement_id for item in public_after_unpublish.json()["data"])
+
+    delete_response = await client.delete(f"/admin/announcements/{announcement_id}", headers=headers)
+    assert delete_response.status_code == 200
+
+    second_delete_response = await client.delete(f"/admin/announcements/{second_announcement_id}", headers=headers)
+    assert second_delete_response.status_code == 200
+
+    admin_list_response = await client.get("/admin/announcements", headers=headers)
+    assert admin_list_response.status_code == 200
+    assert all(item["id"] != announcement_id for item in admin_list_response.json()["data"]["items"])
+
+
 async def test_scheduler_cancels_expired_pending_orders_and_releases_codes() -> None:
     async with async_session_factory() as db:
+        database_now = await db.scalar(select(func.now()))
+        assert database_now is not None
         product = (await db.execute(
             select(Product)
             .where(Product.is_deleted == False)
@@ -185,7 +293,7 @@ async def test_scheduler_cancels_expired_pending_orders_and_releases_codes() -> 
             total_amount=Decimal(product.price),
             contact_info="timer@example.com",
             status=OrderStatus.PENDING,
-            created_at=datetime.now() - timedelta(minutes=16),
+            created_at=database_now - timedelta(minutes=16),
         )
         db.add(order)
         await db.flush()

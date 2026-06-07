@@ -28,7 +28,7 @@ engine = create_async_engine(
     max_overflow=20,
     pool_recycle=3600,
     
-    echo=settings.DEBUG,
+    echo=settings.SQL_ECHO,
 )
 
 async_session_factory = async_sessionmaker(

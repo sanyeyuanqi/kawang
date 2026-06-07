@@ -19,3 +19,6 @@ admin_router.include_router(code_keys_router)
 
 from app.api.v1.admin.orders import router as orders_router
 admin_router.include_router(orders_router)
+
+from app.api.v1.admin.announcements import router as announcements_router
+admin_router.include_router(announcements_router)

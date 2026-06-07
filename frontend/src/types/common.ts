@@ -1,8 +1,18 @@
 export interface ApiResponse<T = unknown> { code: number; msg: string; data: T | null }
 
-export interface PaginatedResponse<T> { items: T[]; total: number; offset: number; limit: number }
+export interface PaginatedResponse<T> {
+  items: T[]
+  total: number
+  offset: number
+  limit: number
+  prev_cursor?: number
+  next_cursor?: number
+  before_cursor?: number
+  after_cursor?: number
+  has_more?: boolean
+}
 
-export interface PaginationParams { offset?: number; limit?: number }
+export interface PaginationParams { offset?: number; after_id?: number; limit?: number }
 
 export interface ShopConfig {
   shop_name: string; shop_slogan: string; avatar_text: string
@@ -11,6 +21,18 @@ export interface ShopConfig {
 
 export interface Category {
   id: number; name: string; subtitle: string; sort_order: number; is_active: boolean
+}
+
+export interface Announcement {
+  id: number
+  title: string
+  tag: string
+  content: string
+  sort_order: number
+  is_pinned: boolean
+  published_at: string | null
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface Product {

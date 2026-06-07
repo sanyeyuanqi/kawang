@@ -13,12 +13,14 @@ const PAGE_SIZE = 10
 const CODE_PAGE_SIZE = 10
 
 const statCardClass = "rounded-[18px] bg-white px-5 py-5 shadow-[0_22px_60px_rgba(15,23,42,0.06)]"
+const emptyStats = { products: 0, unused: 0, assigned: 0, total: 0 }
 
 export default function AdminCodeKeysPage() {
   const { addToast } = useToast()
   const [items, setItems] = useState<CodeKeyStockItem[]>([])
   const [products, setProducts] = useState<CodeKeyProductOption[]>([])
   const [total, setTotal] = useState(0)
+  const [stats, setStats] = useState(emptyStats)
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
@@ -47,6 +49,7 @@ export default function AdminCodeKeysPage() {
       const res = await api.get("/admin/code-keys", { params: { offset, limit: PAGE_SIZE } })
       setItems(res.data.data.items)
       setTotal(res.data.data.total)
+      setStats(res.data.data.stats || emptyStats)
     } catch (err: any) {
       setError(err.response?.data?.msg || "卡密库存加载失败")
     } finally {
@@ -56,7 +59,7 @@ export default function AdminCodeKeysPage() {
 
   const loadProducts = useCallback(async () => {
     try {
-      const res = await api.get("/admin/products", { params: { offset: 0, limit: 100 } })
+      const res = await api.get("/admin/products", { params: { offset: 0, limit: 100, options_only: true } })
       setProducts(res.data.data.items.map((item: any) => ({ id: item.id, name: item.name })))
     } catch {
       setProducts([])
@@ -95,18 +98,6 @@ export default function AdminCodeKeysPage() {
     if (products.length) return products
     return items.map((item) => ({ id: item.product_id, name: item.product_name }))
   }, [items, products])
-
-  const stats = useMemo(() => {
-    return items.reduce(
-      (acc, item) => ({
-        products: acc.products + 1,
-        unused: acc.unused + item.unused_count,
-        assigned: acc.assigned + item.assigned_count,
-        total: acc.total + item.total_count,
-      }),
-      { products: 0, unused: 0, assigned: 0, total: 0 },
-    )
-  }, [items])
 
   const openDetail = async (stock: CodeKeyStockItem) => {
     setSelectedStock(stock)
