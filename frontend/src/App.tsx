@@ -20,6 +20,7 @@ const OrderQueryPage = lazy(() => import("@/pages/shop/OrderQueryPage"))
 const AboutPage = lazy(() => import("@/pages/shop/AboutPage"))
 const AnnouncementsPage = lazy(() => import("@/pages/shop/AnnouncementsPage"))
 const ProfilePage = lazy(() => import("@/pages/shop/ProfilePage"))
+const OutlookCodePage = lazy(() => import("@/pages/shop/OutlookCodePage"))
 
 const DashboardPage = lazy(() => import("@/pages/admin/DashboardPage"))
 const AdminProductsPage = lazy(() => import("@/pages/admin/AdminProductsPage"))
@@ -57,6 +58,7 @@ export default function App() {
                     <Route path="/orders/query" element={<OrderQueryPage />} />
                     <Route path="/announcements" element={<AnnouncementsPage />} />
                     <Route path="/about" element={<AboutPage />} />
+                    <Route path="/outlook-code" element={<OutlookCodePage />} />
                     <Route element={<ProtectedRoute />}>
                       <Route path="/profile" element={<ProfilePage />} />
                     </Route>

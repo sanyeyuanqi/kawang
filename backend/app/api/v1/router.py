@@ -21,6 +21,9 @@ api_router.include_router(auth_router, tags=["Auth"])
 from app.api.v1.announcements import router as announcements_router
 api_router.include_router(announcements_router, tags=["Announcements"])
 
+from app.api.v1.outlook_code import router as outlook_code_router
+api_router.include_router(outlook_code_router, tags=["Outlook Code"])
+
 # Admin routes
 from app.api.v1.admin.router import admin_router
 api_router.include_router(admin_router, tags=["Admin"])

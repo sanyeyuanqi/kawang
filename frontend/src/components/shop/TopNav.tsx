@@ -59,6 +59,10 @@ export default function TopNav({ className = "", containerClassName = "figma-web
             <span>{t("nav.about")}</span>
             <span className={"top-nav-underline absolute bottom-0 left-0 h-[2px] rounded-full bg-[#0e4beb] transition-all duration-200 " + (isActive("/about") ? "w-full" : "w-0 group-hover:w-full")} />
           </Link>
+          <Link className={"top-nav-link group relative inline-flex h-8 items-center transition duration-200 ease-out hover:-translate-y-0.5 hover:text-[#0e4beb] " + (isActive("/outlook-code") ? "top-nav-link-active text-[#0e4beb]" : "text-[#6b7990]")} to="/outlook-code">
+            <span>{t("nav.code")}</span>
+            <span className={"top-nav-underline absolute bottom-0 left-0 h-[2px] rounded-full bg-[#0e4beb] transition-all duration-200 " + (isActive("/outlook-code") ? "w-full" : "w-0 group-hover:w-full")} />
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-[clamp(12px,0.85vw,24px)]">
           <button
