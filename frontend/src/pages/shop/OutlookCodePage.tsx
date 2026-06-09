@@ -27,6 +27,8 @@ const providers = [
   },
 ]
 
+const BODY_PREVIEW_LIMIT = 1600
+
 function parseEmail(raw: string) {
   return raw.trim().split("----")[0]?.trim() || ""
 }
@@ -55,6 +57,9 @@ export default function OutlookCodePage() {
   const parsedEmail = useMemo(() => parseEmail(combo), [combo])
   const bodyText = result?.body_text || result?.body_preview || ""
   const bodyTextSingleLine = bodyText.replace(/\s+/g, " ").trim()
+  const bodyTextPreview = bodyTextSingleLine.length > BODY_PREVIEW_LIMIT
+    ? `${bodyTextSingleLine.slice(0, BODY_PREVIEW_LIMIT)}...`
+    : bodyTextSingleLine
 
   const fetchCode = async () => {
     setError("")
@@ -215,10 +220,9 @@ export default function OutlookCodePage() {
                 </button>
               </div>
               <p
-                className="mt-4 min-h-[48px] whitespace-normal break-words rounded-[8px] bg-[var(--app-surface-soft)] px-4 py-3 text-[16px] font-semibold leading-7 text-[var(--app-text)]"
-                title={bodyTextSingleLine}
+                className="mt-4 max-h-[220px] min-h-[48px] overflow-y-auto whitespace-normal break-all rounded-[8px] bg-[var(--app-surface-soft)] px-4 py-3 text-[14px] font-semibold leading-6 text-[var(--app-text)]"
               >
-                {bodyTextSingleLine || "获取成功后会直接显示完整邮件正文。"}
+                {bodyTextPreview || "获取成功后会直接显示邮件正文预览。"}
               </p>
             </div>
           </section>

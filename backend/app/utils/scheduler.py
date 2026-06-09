@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import timedelta
+from typing import TextIO
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import func, select
@@ -17,6 +19,59 @@ from app.services.payment_events import payment_events
 scheduler = AsyncIOScheduler()
 logger = logging.getLogger(__name__)
 PRODUCT_TYPE_PREORDER = "preorder"
+_scheduler_lock: TextIO | None = None
+
+
+def _acquire_scheduler_lock() -> bool:
+    global _scheduler_lock
+    if _scheduler_lock is not None:
+        return True
+
+    lock_path = settings.SCHEDULER_LOCK_FILE
+    lock_dir = os.path.dirname(lock_path)
+    if lock_dir:
+        os.makedirs(lock_dir, exist_ok=True)
+    lock_file = open(lock_path, "w", encoding="utf-8")
+
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock_file.close()
+        return False
+
+    lock_file.seek(0)
+    lock_file.truncate()
+    lock_file.write(str(os.getpid()))
+    lock_file.flush()
+    _scheduler_lock = lock_file
+    return True
+
+
+def _release_scheduler_lock() -> None:
+    global _scheduler_lock
+    if _scheduler_lock is None:
+        return
+
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            _scheduler_lock.seek(0)
+            msvcrt.locking(_scheduler_lock.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(_scheduler_lock.fileno(), fcntl.LOCK_UN)
+    finally:
+        _scheduler_lock.close()
+        _scheduler_lock = None
 
 
 async def cancel_expired_pending_orders() -> None:
@@ -66,6 +121,9 @@ async def cancel_expired_pending_orders() -> None:
 def start_scheduler():
     if scheduler.running:
         return
+    if not _acquire_scheduler_lock():
+        logger.info("Scheduler is already running in another worker")
+        return
     scheduler.add_job(
         cancel_expired_pending_orders,
         "interval",
@@ -81,3 +139,4 @@ def start_scheduler():
 def stop_scheduler():
     if scheduler.running:
         scheduler.shutdown(wait=False)
+    _release_scheduler_lock()

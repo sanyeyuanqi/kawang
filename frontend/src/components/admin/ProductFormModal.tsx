@@ -144,7 +144,14 @@ export default function ProductFormModal({ open, product, categories, onClose, o
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={product ? "编辑商品" : "新增商品"} className="md:max-w-[680px]">
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={product ? "编辑商品" : "新增商品"}
+      className="md:max-w-[680px]"
+      closeOnOverlay={false}
+      closeOnEscape={false}
+    >
       <form onSubmit={submit} className="space-y-5">
         <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-2 text-14 font-medium text-[#3f495b]">
@@ -260,10 +267,7 @@ export default function ProductFormModal({ open, product, categories, onClose, o
 
         {error && <p className="rounded-[12px] bg-danger-50 px-4 py-3 text-13 text-danger-500">{error}</p>}
 
-        <div className="flex justify-end gap-3 border-t border-[#edf1f6] pt-5">
-          <button type="button" onClick={onClose} className="h-11 rounded-[12px] border border-[#dfe6ef] px-6 text-14 font-semibold text-[#4f5b70] hover:bg-[#f8fbff]">
-            取消
-          </button>
+        <div className="flex justify-end border-t border-[#edf1f6] pt-5">
           <button disabled={saving || uploading} className="h-11 rounded-[12px] bg-primary-500 px-7 text-14 font-semibold text-white hover:bg-primary-600 disabled:opacity-60">
             {saving ? "保存中..." : "保存"}
           </button>

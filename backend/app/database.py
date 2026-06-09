@@ -22,7 +22,7 @@ convention = {
 }
 metadata = MetaData(naming_convention=convention)
 
-database_pool_pre_ping = True
+database_pool_pre_ping = settings.DATABASE_POOL_PRE_PING
 if settings.DATABASE_URL.startswith("mysql+asyncmy://"):
     # SQLAlchemy's generic MySQL pre-ping calls ping() without the reconnect
     # argument required by asyncmy's adapter, which can break reused pooled
@@ -31,9 +31,9 @@ if settings.DATABASE_URL.startswith("mysql+asyncmy://"):
 
 engine = create_async_engine(
     settings.DATABASE_URL,
-    pool_size=10,
-    max_overflow=20,
-    pool_recycle=3600,
+    pool_size=settings.DATABASE_POOL_SIZE,
+    max_overflow=settings.DATABASE_MAX_OVERFLOW,
+    pool_recycle=settings.DATABASE_POOL_RECYCLE_SECONDS,
     pool_pre_ping=database_pool_pre_ping,
     echo=settings.SQL_ECHO,
 )

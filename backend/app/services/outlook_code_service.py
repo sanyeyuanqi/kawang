@@ -60,15 +60,48 @@ def html_to_text(html: str) -> str:
 
 def extract_code(text: str) -> str:
     normalized = re.sub(r"\s+", " ", text)
-    patterns = (
-        r"(?:验证码|校验码|安全代码|代码|code|verification code|security code)[^\dA-Z]{0,30}([A-Z0-9]{4,8})",
-        r"\b(\d{4,8})\b",
-        r"\b([A-Z0-9]{6,8})\b",
+    keyword_pattern = re.compile(
+        r"验证码|校验码|安全代码|动态码|一次性代码|"
+        r"verification code|security code|single[-\s]?use code|"
+        r"one[-\s]?time code|passcode|your code|code is",
+        re.IGNORECASE,
     )
-    for pattern in patterns:
-        match = re.search(pattern, normalized, re.IGNORECASE)
+    code_patterns = (
+        re.compile(
+            r"(?:验证码|校验码|安全代码|动态码|一次性代码|verification code|security code|single[-\s]?use code|one[-\s]?time code|passcode|your code|code is)"
+            r"[^A-Z0-9]{0,80}([A-Z0-9]{4,8})",
+            re.IGNORECASE,
+        ),
+        re.compile(
+            r"([A-Z0-9]{4,8})[^A-Z0-9]{0,40}(?:验证码|校验码|安全代码|动态码|一次性代码|verification code|security code|passcode)",
+            re.IGNORECASE,
+        ),
+    )
+
+    def clean_candidate(value: str) -> str:
+        candidate = value.upper()
+        if len(candidate) < 4 or len(candidate) > 8:
+            return ""
+        if not re.search(r"\d", candidate):
+            return ""
+        return candidate
+
+    for pattern in code_patterns:
+        match = pattern.search(normalized)
         if match:
-            return match.group(1).upper()
+            candidate = clean_candidate(match.group(1))
+            if candidate:
+                return candidate
+
+    for keyword_match in keyword_pattern.finditer(normalized):
+        window_start = max(0, keyword_match.start() - 60)
+        window_end = min(len(normalized), keyword_match.end() + 120)
+        window = normalized[window_start:window_end]
+        for match in re.finditer(r"\b([A-Z0-9]{4,8})\b", window, re.IGNORECASE):
+            candidate = clean_candidate(match.group(1))
+            if candidate:
+                return candidate
+
     return ""
 
 

@@ -15,10 +15,18 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "mysql+asyncmy://root:root@localhost:3306/shop"
     DATABASE_URL_SYNC: str = "mysql+pymysql://root:root@localhost:3306/shop"
+    DATABASE_POOL_SIZE: int = 20
+    DATABASE_MAX_OVERFLOW: int = 40
+    DATABASE_POOL_RECYCLE_SECONDS: int = 1800
+    DATABASE_POOL_PRE_PING: bool = True
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_MAX_CONNECTIONS: int = 50
+    REDIS_MAX_CONNECTIONS: int = 100
+
+    # Runtime
+    UVICORN_WORKERS: int = 4
+    SCHEDULER_LOCK_FILE: str = "/tmp/kawang_scheduler.lock"
 
     # JWT
     JWT_SECRET: str = "change-me-to-a-random-string-min-32-chars-long"

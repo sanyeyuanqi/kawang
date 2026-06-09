@@ -1,39 +1,38 @@
+import { useEffect, useState } from "react"
+import { QRCodeSVG } from "qrcode.react"
 import { Link } from "react-router-dom"
 import { MobileHomeIndicator } from "@/components/shop/MobilePhoneFrame"
 import { shopInfoConfig } from "@/config/shopInfoConfig"
 import { useLanguage } from "@/context/LanguageContext"
 import { useShopContactConfig } from "@/hooks/useShopContactConfig"
 
-function MiniQr({ className = "absolute left-[252px] top-[526px]", imageSrc = "", size = 86 }: { className?: string; imageSrc?: string; size?: number }) {
+function MiniQr({
+  className = "absolute left-[252px] top-[526px]",
+  imageSrc = "",
+  qrValue,
+  size = 86,
+}: { className?: string; imageSrc?: string; qrValue: string; size?: number }) {
+  const [imageFailed, setImageFailed] = useState(false)
   const scale = size / 86
   const qrStyle = { width: size, height: size, borderRadius: Math.round(10 * scale) }
-  if (imageSrc) {
+  const inset = Math.max(8, Math.round(8 * scale))
+  const qrSize = Math.max(1, size - inset * 2)
+
+  useEffect(() => {
+    setImageFailed(false)
+  }, [imageSrc])
+
+  if (imageSrc && !imageFailed) {
     return (
       <div className={`${className} mini-qr overflow-hidden border border-[#c7d6eb] bg-[#f6f8fb]`} style={qrStyle}>
-        <img src={imageSrc} alt="" className="h-full w-full object-cover" />
+        <img src={imageSrc} alt="" className="h-full w-full object-cover" onError={() => setImageFailed(true)} />
       </div>
     )
   }
-  const modules = [
-    [6, 6, 14, 14], [10, 10, 6, 6], [50, 6, 14, 14], [54, 10, 6, 6],
-    [6, 50, 14, 14], [10, 54, 6, 6], [28, 6, 6, 6], [38, 10, 4, 10],
-    [28, 20, 12, 4], [46, 26, 6, 6], [58, 34, 6, 6], [26, 34, 6, 10],
-    [38, 38, 14, 4], [8, 30, 6, 6], [18, 38, 6, 4], [30, 52, 6, 6],
-    [42, 50, 4, 12], [54, 54, 10, 4], [24, 62, 8, 4], [62, 22, 4, 8],
-  ]
   return (
-    <div className={`${className} mini-qr border border-[#c7d6eb] bg-[#f6f8fb]`} style={qrStyle}>
-      <div
-        className="mini-qr-inner absolute bg-white"
-        style={{ left: 8 * scale, top: 8 * scale, width: 70 * scale, height: 70 * scale, borderRadius: 4 * scale }}
-      >
-        {modules.map(([x, y, w, h], index) => (
-          <span
-            key={index}
-            className="mini-qr-module absolute bg-[#111827]"
-            style={{ left: x * scale, top: y * scale, width: w * scale, height: h * scale, borderRadius: scale }}
-          />
-        ))}
+    <div className={`${className} mini-qr overflow-hidden border border-[#c7d6eb] bg-[#f6f8fb] p-2`} style={qrStyle}>
+      <div className="flex h-full w-full items-center justify-center rounded bg-white">
+        <QRCodeSVG value={qrValue || "ylj3194584108"} size={qrSize} bgColor="#ffffff" fgColor="#111827" level="H" />
       </div>
     </div>
   )
@@ -51,7 +50,7 @@ export default function AboutPage() {
         <main className="px-7 pt-5">
           <section className="rounded-[20px] border border-[#dbe5f5] bg-white px-6 py-8">
             <div className="flex items-center gap-5">
-              <MiniQr className="relative shrink-0" imageSrc={contactConfig.qrImageSrc} />
+              <MiniQr className="relative shrink-0" imageSrc={contactConfig.qrImageSrc} qrValue={contactConfig.customerWechat} size={112} />
               <div>
                 <h2 className="text-[24px] font-bold leading-none text-[#111827]">{st(brand.name)}</h2>
                 <p className="mt-3 text-[16px] leading-none text-[#737d8f]">{st(brand.subtitle)}</p>
@@ -117,7 +116,7 @@ export default function AboutPage() {
             </div>
 
             <div className="absolute right-[clamp(74px,4.8vw,108px)] top-1/2 -translate-y-1/2">
-              <MiniQr className="relative shrink-0" imageSrc={contactConfig.qrImageSrc} size={118} />
+              <MiniQr className="relative shrink-0" imageSrc={contactConfig.qrImageSrc} qrValue={contactConfig.customerWechat} size={132} />
             </div>
           </section>
 
